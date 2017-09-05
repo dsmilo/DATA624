@@ -1,0 +1,242 @@
+---
+title: "Time Series Decomposition"
+author: "Dan Smilowitz"
+date: "September 5, 2017"
+output: 
+  ioslides_presentation: 
+    widescreen: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, comment=NA,
+                      fig.height = 5, fig.width = 10, fig.align = "center")
+library(fma)
+library(tidyverse)
+```
+
+## Background
+
+Time series can exhibit variety of patterns, which can be split into components representing different patterns
+
+Extracting patterns & components yields two benefits:
+
+  - Understand series better
+  - Improve forecasts
+
+## Time Series Patterns
+  
+Three types of patterns:
+
+  1.  **Trend:** long-term increase or decrease in data
+    - May change direction
+  2.  **Seasonal:** influenced by seasonal factors
+    - Always of fixed, known period
+  3.  **Cyclic:** rises and falls *not* of fixed period
+  
+## Time Series Patterns
+
+```{r pattern-examples}
+theme_set(theme_light())
+gridExtra::grid.arrange(
+  autoplot(hsales, xlab = "Year", ylab = "Housing sales (M)") +
+    ggtitle("Monthly housing sales", "Seasonality & cyclical"),
+  autoplot(ustreas, xlab = "Day", ylab = "Contracts") +
+    ggtitle("US treasury bill contracts", "Downward trend"),
+  autoplot(elec, xlab = "Year", ylab = "Production") +
+    ggtitle("Australian monthly electricity production", "Seasonality & upward trend"),
+  autoplot(diff(dj), xlab = "Day", ylab = "Daily change") +
+    ggtitle("Daily change in Dow Jones index", "No strong patterns"),
+  nrow = 2
+)
+```
+
+
+## Time Series Components
+A series $y_t$ has 3 components:
+
+  - seasonal component $S_t$ (fixed-period variation)
+  - trend-cycle component $T_t$ (long-term trend & non-fixed cycle)
+  - remainder component $E_t$ (anything else in time series)
+
+<div class="columns-2">
+
+  
+  **Additive Model:**
+  $$y_t = S_t + T_t + E_t$$
+  
+  Seasonal fluctuation magnitude & trend-cycle variation are not proportional to level of time series
+  
+  <br />
+  <br />
+  <br />
+  <br />
+  
+  
+  **Multiplicative Model:**
+  $$y_t = S_t \times T_t \times E_t$$
+  
+  Seasonal fluctuation magnitude & trend-cycle variation varies with level
+  
+  *Transformed:* $\log y_t = \log S_t + \log T_t + \log E_t$
+  
+</div>
+
+
+
+## Seasonally Adjusted Data
+The data with the seasonal component removed ($y_t - S_t$ or $y_t / S_t$) is the **seasonally adjusted data**.
+
+  > - Useful if seasonal variation is not pattern of interest
+  > - Comprises remainder and trend-cycle components
+  > - Commonly used for economic data to study non-seasonal variation
+
+
+## Moving Averages
+Moving average of order $m$ ($m$-MA):
+$$\hat{T}_t = \frac{1}{m} \sum_{j = -k}^k y_{t+j}$$
+  
+  > - Averages values $y_j$ within $k$ periods of $t$
+  > - Eliminates some randomness, estimating trend-cycle
+  > - Captures trend without minor fluctuation
+  > - Increasing order increases smoothness
+
+
+## Moving Averages | MA Order
+
+```{r ma-order}
+data(elecsales, package = "fpp")
+data_frame(Year = time(elecsales),
+           GWh = as.numeric(elecsales),
+           `3-MA` = ma(elecsales, order = 3),
+           `5-MA` = ma(elecsales, order = 5),
+           `7-MA` = ma(elecsales, order = 7),
+           `9-MA` = ma(elecsales, order = 9)) %>% 
+  gather(Order, Value, -c(Year, GWh)) %>% 
+  ggplot(aes(x = Year)) + geom_line(aes(y = GWh)) +
+  geom_line(aes(y = Value, col = Order), lwd = 1, show.legend = FALSE) +
+  facet_wrap(~ Order, nrow = 2) +
+  ggtitle("Residential electricity sales", "Data vs. moving averages of varying order")
+```
+
+
+## Moving Averages | Averages of Averages
+
+  - The moving average of a moving average gives a smoother trend estimate
+  - Even-order MA of even-order MA will return a symmetric MA
+    - *i.e.* takes same number of points before and after $t$
+  - Notation $m_2 \times m_1$-MA
+  
+### Estimating Trend with Seasonal Data
+Taking $2 \times m$-MA yields weighted MA of period $m+1$ with first and last observations having half-weight.  This can be used to view the trend absent seasonality
+
+
+## Moving Averages
+
+```{r elec-2x12}
+autoplot(elec, xlab = "Year", ylab = "GWh") +
+  ggtitle("Residential electricity sales", "Data and 2x12-MA") +
+  geom_line(aes(t, ma), data_frame(t = time(elec), ma = ma(elec, 12)), col = 2)
+```
+
+## Classical Decomposition
+<div class="columns-2">
+  **Additive decomposition:**
+
+  1. Compute trend cycle component $\hat{T}_t$
+    - $2 \times m$-MA if $m$ is even
+    - $m$-MA if $m$ is odd
+  2. Calculate de-trended series $y_t - \hat{T}_t$
+  3. Calculate $\hat{S}_t$ from de-trended values
+    + Average values for each period
+    + Adjust values so sum is zero
+  4. Remainder is $\hat{E}_t = y_t - \hat{T}_t - \hat{S}_t$
+  
+  `decompose(x, type = "a")`
+  
+  <br />
+  
+  **Multiplicative decomposition:**
+
+  1. Compute trend cycle component $\hat{T}_t$
+    - $2 \times m$-MA if $m$ is even
+    - $m$-MA if $m$ is odd
+  2. Calculate de-trended series $y_t / \hat{T}_t$
+  3. Calculate $\hat{S}_t$ from de-trended values
+    + Average values for each period
+    + Adjust values so sum is $m$
+  4. Remainder is $\hat{E}_t = y_t / \left( \hat{T}_t - \hat{S}_t \right)$
+  
+  `decompose(x, type = "m")`
+  
+</div>
+
+## Classical Decomposition | Shortcomings
+
+  - Trend estimate unavailable for first & last $m/2$ periods
+    - Therefore no remainder $\rightarrow$ all seasonality
+  - Assume seasonal component repeats from year to year
+    - Unable to capture changes in seasonality over time
+  - Unable to detect unusual patterns
+
+### X-12-ARIMA
+Method created to address shortcomings --- 16-step process detailed in section *6/4* (pages 162-163).  Requires proprietary software; no R package for performing this decomposition.
+
+## STL Decomposition
+**S**easonal and **T**rend decomposition using **L**oess (method for estimating nonlinear relationships) presents strengths over other methods:
+
+  - Handle any type of seasonality
+  - Seasonal component allowed to change over time
+  - User-controlled trend-cycle smoothness
+  - Robust to unusual observations
+  
+STL can only be used with additive decomposition -- must log-transform multiplicative models
+
+`stl(x, s.window, t.window, ...)`
+
+## STL Decomposition
+```{r stl-periodic}
+library(highcharter)
+hchart(stl(elec, "periodic")) %>%
+  hc_title(text = "STL Decomposition of Australian Electricity Usage") %>% 
+  hc_subtitle(text = "Periodic seasonal component")
+```
+
+## STL Decomposition
+```{r stl-seasonality-change}
+hchart(stl(elec, s.window = 13, robust = TRUE)) %>%
+  hc_title(text = "STL Decomposition of Australian Electricity Usage") %>% 
+  hc_subtitle(text = "Changing seasonal component (s.window = 13); Robust to outliers")
+```
+
+
+## Foreasting with Decomposition
+A decomposed time series is written as:
+
+  - $y_t = \hat{S}_t + \hat{A}_t$ with $\hat{A}_t = \hat{T}_t + \hat{E}_t$ (additive)
+  - $y_t = \hat{S}_t  \hat{A}_t$ with $\hat{A}_t = \hat{T}_t  \hat{E}_t$ (multiplicative)
+
+The two components $\hat{S}_t$ & $\hat{A}_t$ are forecast separately:
+
+  - $\hat{S}_t$ assumed unchanging
+    - Prior year's value taken (seasonal naive)
+  - $\hat{A}_t$ forecast using non-seasonal method
+    - Naive
+    - Random walk with drift
+    - ARIMA
+
+## Foreasting with Decomposition
+```{r forecast}
+data(elecequip, package = "fpp")
+elecequip %>% 
+  stl(s.window = "periodic", t.window = 15, robust = TRUE) %>% 
+  forecast(method = "rwdrift") %>% 
+  autoplot() +
+  labs(title = "Forecast of electric equipment manufacturing",
+       subtitle = "Forecasts from STL + Random walk with drift",
+       x = "Year", y = "New orders index")
+```
+
+
+# Thank You
+### Slides: https://rpubs.com/dsmilo/DATA624-Lecture
+### Source code: https://github.com/dsmilo/DATA624
