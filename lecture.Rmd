@@ -164,7 +164,7 @@ autoplot(elec, xlab = "Year", ylab = "GWh") +
   3. Calculate $\hat{S}_t$ from de-trended values
     + Average values for each period
     + Adjust values so sum is $m$
-  4. Remainder is $\hat{E}_t = y_t / \left( \hat{T}_t - \hat{S}_t \right)$
+  4. Remainder is $\hat{E}_t = y_t / \left( \hat{T}_t \hat{S}_t \right)$
   
   `decompose(x, type = "m")`
   
