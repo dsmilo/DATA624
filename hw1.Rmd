@@ -1,0 +1,522 @@
+---
+title: 'DATA 624: Homework 1'
+author: "Dan Smilowitz"
+date: "October 17, 2017"
+output: 
+  html_document: 
+    highlight: pygments
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, warning = FALSE, message = FALSE,
+                      fig.align = "center")
+library(tidyverse)
+library(scales)
+# library(extrafont)
+# loadfonts(device = "win", quiet = TRUE)
+theme_set(theme_light())#base_family = "Calibri"))
+library(pander)
+```
+
+## HA 2.1
+```{r ha_2-1_load-data}
+library(fma)
+data("dole")
+data("usdeaths")
+data("bricksq")
+```
+
+### Unemployment Benefits
+```{r ha_2-1_dole}
+autoplot(dole) +
+  labs(title = "People on unemployed benefits in Australia",
+       subtitle = "January 1956 - July 1992",
+       x = "Month", y = "Number receiving benefits")
+```
+
+Given the rapid growth after 1975, a transformation seems reasonable -- this plot is presented below using a base-10 logarithm:
+```{r ha_2-1_dole-log}
+lambda_dole <- round(BoxCox.lambda(dole), 2)
+autoplot(BoxCox(dole, lambda_dole)) +
+  labs(title = "People on unemployed benefits in Australia",
+       subtitle = substitute("Box-Cox transformed with "*lambda*" = "*l,
+                             list(l = lambda_dole)),
+       x = "Month", y = "Number receiving benefits (transformed)")
+```
+
+This transformation provides greater insight into variation in the data before 1975 -- in the un-transformed plot, the data appeared to be nearly zero, but here it can be clearly seen that there is variation of non-trivial degree in this period.  The significant growth in values after 1975 is still apparent, as each horizontal line in the grid represents values more than tripling.
+
+
+### Accidental Deaths
+```{r ha_2-1_usdeaths}
+autoplot(usdeaths) +
+  labs(title = "Accidental deaths in the United States",
+       subtitle = "January 1973 - December 1978",
+       x = "Month", y = "Number of deaths")
+```
+
+In this case, since the magnitude of observations does not significantly change over time, a transformation is not needed.
+
+
+### Brick Production
+```{r ha_2-1_bricksq}
+autoplot(bricksq) +
+  labs(title = "Production of bricks at Portland, Australia",
+       subtitle = "March 1956 - September 1994",
+       x = "Quarter", y = "Millions of units produced")
+```
+
+Because of the difference in series behavior before and after 1975 (steady growth with seasonal variation followed by more stable behavior with seasonal variation), a transformation may be insightful.
+```{r ha_2-1_bricksq-boxcox}
+lambda_bricksq <- round(BoxCox.lambda(bricksq), 2)
+autoplot(BoxCox(bricksq, lambda_bricksq)) +
+  labs(title = "Production of bricks at Portland, Australia",
+       subtitle = substitute("Box-Cox transformed with "*lambda*" = "*l,
+                             list(l = lambda_bricksq)),
+       x = "Quarter", y = "Millions of units produced (transformed)")
+```
+
+This transformation does not provide any significant differences in the way the data is displayed; it is likely that no new inferences will be developed compared to the original plot.
+
+
+
+## HA 2.3
+```{r ha_2-3_load}
+data("ibmclose")
+```
+
+
+### Part a
+The plots below show the IBM closing stock prices, change relative to the first value, andas the daily percentage change:
+
+```{r ha_2-3_explore}
+ibm_tot_diff <- ibmclose / ibmclose[1] - 1
+ibm_day_diff <- ts(ibmclose[2:369] / ibmclose[1:368] - 1,
+                   start = 2, end = 369, frequency = 1)
+
+autoplot(ibmclose) +
+  labs(title = "IBM stock closing prices",
+       x = "Day",
+       y = "Closing price") +
+  scale_y_continuous(labels = dollar_format())
+
+autoplot(ibm_tot_diff) +
+  labs(title = "Change in IBM stock closing price",
+       x = "Day",
+       y = "Percentage change from initial value") +
+  scale_y_continuous(labels = percent)
+
+autoplot(ibm_day_diff) +
+  labs(title = "Change in IBM stock closing price",
+       x = "Day",
+       y = "Daily percentage change") +
+  scale_y_continuous(labels = percent)
+```
+
+The plots above show a steady rise in price, followed by a slight decline then a steep decline, all showing daily variation generally between -2.5% and 2.5%.  Near the end of this decline, and into the subsequent steady increase, the daily returns become increasingly volatile.  The price then decreases again slowly with a volatility lower than the period immediately preceding it, but still higher than in the initial period of 200 days.
+
+
+### Part b
+The data is split into a training and testing set with 300 and 69 observations, respectively:
+```{r ha_2-3_split}
+ibm_train <- ibmclose[1:300]
+ibm_test  <- ibmclose[301:369]
+```
+
+
+### Part c
+Three forecasts are performed on the split data:
+
+  - Random walk with drift
+  - Mean
+  - Naive
+
+```{r ha_2-3_fits}
+ibm_drift <- rwf(ibm_train, 69, drift = TRUE)
+ibm_mean  <- meanf(ibm_train, 69)
+ibm_naive <- naive(ibm_train, 69)
+```
+
+The accuracy of this forecasts is calculated against the test data using the `accuracy` function and three measures of accuracy:
+
+```{r ha_2-3_accuracy}
+ibm_acc <- as.data.frame(rbind(
+  accuracy(ibm_drift, ibm_test)["Test set", c("ME", "RMSE", "MAE", "MPE", "MAPE", "MASE")],
+  accuracy(ibm_mean, ibm_test)["Test set", c("ME", "RMSE", "MAE", "MPE", "MAPE", "MASE")],
+  accuracy(ibm_naive, ibm_test)["Test set", c("ME", "RMSE", "MAE", "MPE", "MAPE", "MASE")]),
+  row.names = c("Drift", "Mean", "Naive"))
+
+pander(ibm_acc)
+```
+
+By the Root Mean Squared Error, Mean Absolute Error, and Mean Absolute Percentage Error benchmarks, the random walk with drift method is most accurate.
+By the Mean Absolute Scaled Error benchmark, the mean method is most accurate.
+By the Mean Error and Mean Percentage error benchmarks, the naive method is most accurate.
+
+Due to the split in which model "did best" according to various benchmarks, a determination of which measure is most appropriate (scale-dependent, percent, or absolute) to determine suitability of a forecast.  In the absence of this knowledge, a plot of the forecasts vs. the data may provide insight:
+
+```{r ha_2-3_plot}
+data_frame(Day = 1:369,
+           Data = ibmclose,
+           Drift = c(rep(NA, 300), ibm_drift$mean),
+           Mean = c(rep(NA, 300), ibm_mean$mean),
+           Naive = c(rep(NA, 300), ibm_naive$mean)) %>%
+  gather(Model, Value, c(Drift, Mean, Naive)) %>% 
+  ggplot(aes(Day)) +
+    geom_line(aes(y = Data), col = "grey50") +
+    geom_line(aes(y = Value, col = Model)) +
+    geom_vline(xintercept = 300, lty = 3, col = "grey25") +
+  scale_x_continuous() +
+  scale_y_continuous("Closing Price", labels = dollar_format()) +
+  labs(title = "IBM stock closing prices",
+       subtitle = "Actual & forecast using 3 models trained on 300 days' data")
+```
+
+From this plot, it is clear that the naive model fails to capture overall trend of the observations beyond the training set, and the mean model is rather inappropriate.  The random walk with drift model best captures the data, and performed best according to 3 of 6 benchmarks utilized --- it is the most appropriate model for this data.
+
+
+
+## HA 6.2
+```{r ha_6-2_load}
+data("plastics")
+```
+
+
+### Part a
+```{r ha_6-2_a}
+autoplot(plastics) +
+  labs(title = "Plastics manufacturer sales",
+       subtitle = "Product A",
+       x = "Year",
+       y = "Monthly sales (thousands)")
+```
+
+From this plot, there is a clear annual seasonality where sales rise from roughly February through roughly July or August, then fall through the end of the year through roughly the following February.  A clear increasing trend can be seen as well -- outside of the first few months of year 2, each month's sales show an increase from the same month in the prior year.
+
+
+### Part b
+The multiplicative decomposition, and resulting seasonal and trend indices, are presented below:
+```{r ha_6-2_b}
+fit_plastics <- decompose(plastics, "m")
+fit_plastics[c("seasonal", "trend")]
+```
+
+
+### Part c
+```{r ha_6-2_c}
+autoplot(fit_plastics) +
+  labs(title = "Decomposition of monthly plastic sales",
+       subtitle = "Assuming multiplicative time series",
+       x = "Year")
+```
+
+The seasonal and trend indices, as shown above and illustrated in the above graph, support the interpretation from part a -- there is an annual rising-then-falling seasonality running from February-February and a clear upward trend.
+
+
+### Part d
+For a multiplicative time series, the seasonally adjusted data is given by dividing the original data by the seasonal component ($y_t / S_t$)
+```{r ha_6-2_d}
+adj_plastics <- plastics / fit_plastics[["seasonal"]]
+autoplot(adj_plastics) +
+  labs(title = "Seasonally adjusted monthly plastic sales",
+       subtitle = "Product A",
+       x = "Year",
+       y = "Monthly sales (thousands)")
+```
+
+
+### Part e
+The 31st observation, corresponding to 2.5 years into the time window, is increased from 1303 to 2000:
+```{r ha_6-2_e-out}
+out_plastics <- plastics
+out_plastics[31] <- 2000
+```
+
+The seasonal component and seasonally-adjusted data are recalculated, using the `seasadj` function for brevity:
+```{r ha_6-2_e-plots}
+fit_out_plastics <- decompose(out_plastics, "m")
+gridExtra::grid.arrange(
+  autoplot(fit_out_plastics$seasonal) + 
+    labs(y = "Seasonal Component\n", x = NULL) +
+    scale_x_continuous(labels = NULL, minor_breaks = seq(1, 6, 0.5)),
+  autoplot(seasadj(fit_out_plastics)) + 
+    labs(y = "Seasonally Adjusted", x = "Year"),
+  top = grid::textGrob("Monthly plastic sales for Product A with outlier added in month 31"))
+```
+
+The addition of this outlier is observed in the seasonally adjusted data.  The change at $t=31$ in the seasonally adjusted data is less than the raw change to the value, indicating that some of the change is incorporated into the seasonal data.
+
+
+### Part f
+Performing a similar manipulation as in parts d and e, this time changing the final value of the initial time series from 1013 to 1500:
+
+```{r ha_6-2_f}
+out_end_plastics <- plastics
+out_end_plastics[length(plastics)] <- 1500
+
+fit_out_end_plastics <- decompose(out_end_plastics, "m")
+gridExtra::grid.arrange(
+  autoplot(fit_out_end_plastics$seasonal) + 
+    labs(y = "Seasonal Component\n", x = NULL) +
+    scale_x_continuous(labels = NULL, minor_breaks = seq(1, 6, 0.5)),
+  autoplot(seasadj(fit_out_end_plastics)) + 
+    labs(y = "Seasonally Adjusted", x = "Year"),
+  top = grid::textGrob("Monthly plastic sales for Product A with outlier added in month 60"))
+
+```
+
+In this case, the seasonally adjusted data absorbs almost all of the change in the data, showing that the outlier at end of the period affects the seasonality of the time series less strongly than an outlier in the middle.
+
+
+### Part g
+A random walk with drift is performed on the seasonally adjusted plastic sales data from part d to forecast the next 12 months of seasonally adjusted data
+```{r ha_6-2_g}
+drift_plastics <- rwf(adj_plastics, drift = TRUE, h = 12, level = c(95))
+autoplot(drift_plastics) +
+  scale_x_continuous(breaks = 1:7) +
+  labs(title = "Forecast of seasonally adjusted monthly plastic sales of product A",
+       subtitle = "Using random walk with drift, with 95% prediction interval",
+       x = "Year",
+       y = "Monthly sales (thousands)") +
+  theme(legend.position = "none")
+```
+
+
+### Part h
+Reseasonalize the results to give forecasts on the original scale.
+The reseasonalized results are given by multiplying the seasonal component (`figure`) of the decomposed series by mutiplying the values (`mean`), and confidence bounds (`lower` and `upper`) of the forecast.  These are plotted alongside the original values below:
+
+```{r ha_6-2_h}
+reseas_plastics <- drift_plastics
+reseas_plastics$x <- plastics
+reseas_plastics$mean <- drift_plastics$mean * fit_plastics$figure
+reseas_plastics$upper <- drift_plastics$upper * fit_plastics$figure
+reseas_plastics$lower <- drift_plastics$lower * fit_plastics$figure
+
+autoplot(reseas_plastics) +
+  scale_x_continuous(breaks = 1:7) +
+  labs(title = "Forecast of monthly plastic sales of Product A",
+       subtitle = "Using random walk with drift, with 95% prediction interval",
+       x = "Year",
+       y = "Monthly sales (thousands)") +
+  theme(legend.position = "none")
+
+```
+
+
+
+## KJ 3.1
+```{r kj_3-1_load}
+library(mlbench)
+data(Glass)
+```
+
+
+### Parts a & b
+The distributions of each predictor are shown below:
+
+```{r kj_3-1_a-hist}
+Glass %>%
+  gather(Predictor, Value, -Type) %>%
+  mutate(Predictor = forcats::as_factor(Predictor)) %>%
+  ggplot(aes(x = Value)) +
+  geom_histogram(bins = 15, alpha = 0.5, col = "black") +
+  facet_wrap(~ Predictor, scales = "free") +
+  labs(title = "Distribution of Glass predictors",
+       y = "Count")
+```
+
+It can be seen that two predictors (`Ba` and `Fe`) have a very high number of zero or near-zero observations and are heavily right-skewed.  This same right-skewness is shown in predictor `K`, and to a lesser degree by predictor `Ca`.  Predictors `RI` and `NA` show a much smaller possible right-skewness.  Predictor `Mg` shows a left-skewness accompanied by a large number of zero-value observations.
+
+It appears that there may be outliers in the extremely skewed variables.  Specifically, the strongly right-skewed `K` predictor ranges between 0 and 6, but only 3 of the 219 observations are greater than 3.  This can be further investigated using boxplots:
+
+```{r kj_3-1_a-box}
+Glass %>%
+  gather(Predictor, Value, -Type) %>%
+  mutate(Predictor = forcats::as_factor(Predictor)) %>%
+  ggplot(aes(x = Predictor, y = Value)) +
+  geom_boxplot() + coord_flip() +
+  facet_wrap(~ Predictor, scales = "free") +
+  ggtitle("Distribution of Glass predictors") +
+  scale_x_discrete("", breaks = NULL, labels = NULL)
+```
+
+The boxplot highlights that there appear to be a number of outliers in each predictor except `Mg`.  The number of outliers by predictor is calculated, where an outlier $x$ is defined by the criteria $x < Q1(X) - 1.5 \times IQR(X)$ or $x > Q3(X) + 1.5 \times IQR(X)$ where $Q1$, $Q3$, and $IQR$ are the first quartile, third quartile, and interquartile range, respectively, of the predictor $X$.
+
+```{r kj_3-1_a-out}
+outliers_glass <- Glass %>% 
+  select(-Type) %>% 
+  summarise_all(funs(sum(
+    . < quantile(., 0.25) - 1.5 * IQR(.) | . > quantile(., 0.75) + 1.5 * IQR(.)
+    )))
+```
+
+`r pander(outliers_glass)`
+
+This table shows that six predictors -- `RI`, `Al`, `Si`, `Ca`, `Ba`, and `Fe` -- have more than 11 outliers, corresponding to over 5% of observations.
+
+The correlation between the predictors are shown in the plot below:
+
+```{r kj_3-1_a-cor}
+Glass %>%
+  GGally::ggcorr(label = TRUE, label_round = 2) +
+  labs(title = "Correlation of glass predictors") +
+  theme(legend.position = "none")
+```
+
+
+From this visualization, it can be seen that there is a high positive correlation (0.81) between `RI` and `Ca`; the strongest positive correlation not involving the `RI` predictor is 0.48 between `Al` and `Ba`.  The strongest negative correlation (-0.54) exists between `RI` and `Si`, followed by -0.49 between `Ba` and `Mg`.  There are five predictor pairs with correlation of absolute value less than 0.05.
+
+
+### Part c
+For the skewed predictors identified above, a Box-Cox transformation may improve the classifcation model by reducing or removing the skew.  For the six predictors with high concentrations of outliers, a spatial sign transformation may be useful if the model is sensitive to outliers.
+
+
+
+## KJ 3.2
+```{r kj_3-2_load}
+data(Soybean)
+```
+
+
+### Part a
+The following predictors meet the degeneracy criteria set forth in the text:
+
+  - Fraction of unique values over sample size (`Unique_Ratio`) under 10%
+  - Ratio of the most frequent value to second-most frequent (`Freq_Ratio`) over 20
+
+```{r kj_3-2_a}
+degen_soybean <- Soybean %>% 
+  # convert predictors to tidy format
+  select(-Class, -date) %>% 
+  gather(Predictor, Value) %>% 
+  # only consider complete cases
+  drop_na() %>%
+  group_by(Predictor, Value) %>% 
+  # get ratio of most prevalent to second-most prevalent by variable
+  summarise(n = n()) %>% 
+  mutate(Freq_Ratio = max(n) / sort(n, decreasing = TRUE)[2]) %>% 
+  # get fraction of unique values over number of observations
+  group_by(Predictor, Freq_Ratio) %>% 
+  summarise(Unique_Ratio = length(unique(Value)) / nrow(Soybean)) %>% 
+  # filter for degenerate predictors
+  ungroup() %>% 
+  filter(Freq_Ratio > 20, Unique_Ratio < 0.10)
+```
+
+`r pander(degen_soybean)`
+
+
+### Part b
+The predictors are shown below by the portion of observations with missing data:
+
+```{r kj_3-2_b-predictor}
+missing_predictor <- Soybean %>% 
+  # convert to tidy format
+  select(-Class) %>% 
+  gather(Predictor, Value) %>% 
+  # get number missing by predictor
+  group_by(Predictor) %>% 
+  summarize(Missing = sum(is.na(Value))) %>% 
+  # divide by total observations
+  mutate(Missing = Missing / nrow(Soybean)) %>% 
+  arrange(desc(Missing))
+```
+
+`r pander(missing_predictor)`
+
+The predictors `hail`, `lodging`, `seed.tmt`, and `sever` have the highest proportion of missing values (17.72%), closely followed by `germ` (16.4%).  The `leaves` predictor has no missing values, while `area.dam` and `date` have roughly 0.15% missing, corresponding to a single missing value.
+
+Similarly, the proportion of missing predictor values with missing data is shown below by class:
+
+```{r kj_3-2_b-class}
+missing_class <- Soybean %>% 
+  # convert to tidy format
+  gather(Predictor, Value, -Class) %>% 
+  # get number missing by class
+  group_by(Class) %>% 
+  summarize(Missing = sum(is.na(Value))) %>% 
+  # divide by observations * predictors
+  mutate(Missing = Missing / (nrow(Soybean) * 35)) %>% 
+  arrange(desc(Missing))
+```
+
+`r pander(missing_class)`
+
+The *phytophthora-rot* shows over 5% missing values; the *2-4-d-injury* and *cyst-nematode* show between 1-2% missing values; the *diaporthe-pod-&-stem-blight* and *herbicide-injury* show under 1% missing values; the remaining 14 classes show zero missing values.  Note that these percentages are an indication of the number of observations of each variable missing, i.e. the number of missing data points rather than observations that contain missing data points.
+
+
+### Part c
+As outlined in Part a, the variables *leaf.mild*, *mycelium*, and *sclerotia* are degenerate -- these variables should be removed.  To investigate the appropriate approach for additional missing variables, the patterns of missing values across predictors and classes are investigated:
+```{r kj_3-2_c}
+# get degenerative predictors
+predictors_degen <- degen_soybean %>% pull(Predictor)
+
+# get classes with missing values
+classes_missing <- missing_class %>% filter(Missing > 0) %>%
+  pull(Class) %>% as.character()
+
+# calculate missing values by predictor & class, then plot
+Soybean %>% 
+  # convert to tidy format, select missing classes, exclude degen predictors
+  gather(Predictor, Value, -Class) %>% 
+  filter(Class %in% classes_missing,
+         !Predictor %in% predictors_degen) %>% 
+  # get number missing by predictor & class
+  group_by(Predictor, Class) %>% 
+  summarize(n = n(), Missing = sum(is.na(Value))) %>% 
+  # divide by observations * predictors
+  mutate(Missing = Missing / n) %>% 
+  ungroup() %>%
+  # plot tiled results (heatmap)
+  ggplot(aes(x = Predictor, y = Class, fill = Missing)) +
+  geom_tile() +
+  # tweak appearance
+  scale_y_discrete(limits = rev(classes_missing)) +
+  scale_fill_gradient(name = "% of Values Missing", low = "white", high = "black") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "bottom") +
+  ggtitle("Missing values by class & predictor")
+```
+
+The classes *2-4-d-injury*, *cyst-nematode*, and *herbicide-injury* show nearly 100% missing values across all predictors.  Imputation of values for these classes will likely not be helpful since so many of the observations are missing; as such, cases associated with these three classes should be removed from the dataset.  Given the more moderate nature of the missing data patterns for the *phytophthora-rot* and *diaporthe-pod-&-stem-blight* classes, imputation for the missing values may be more informative and should be performed.
+
+
+
+## HA 7.1
+Data set `books` contains the daily sales of paperback and hardcover books at the same store. The task is to forecast the next four days' sales for paperback and hardcover books.
+
+### Part a
+Plot the series and discuss the main features of the data.
+
+### Part b
+Use simple exponential smoothing with the `ses` function (setting `initial="simple"`) and explore different values of $\alpha$ for the paperback series. Record the within-sample SSE for the one-step forecasts. Plot SSE against $\alpha$ and find which value of $\alpha$ works best. What is the effect of $\alpha$ on the forecasts?
+
+### Part c
+Now let ses select the optimal value of $\alpha$. Use this value to generate forecasts for the next four days. Compare your results with 2.
+
+### Part d
+Repeat but with `initial="optimal"`. How much difference does an optimal initial level make?
+Repeat steps (b)-(d) with the `hardcover` series.
+
+
+## HA 7.2
+Apply Holt's linear method to the `paperback` and `hardback` series and compute four-day forecasts in each case.
+
+### Part a
+Compare the SSE measures of Holt's method for the two series to those of simple exponential smoothing in the previous question. Discuss the merits of the two forecasting methods for these data sets.
+
+### Part b
+Compare the forecasts for the two series using both methods. Which do you think is best?
+
+### Part c
+Calculate a 95% prediction interval for the first forecast for each series using both methods, assuming normal errors. Compare your forecasts with those produced by R.
+
+<!--
+## HA 8.?
+
+
+## KJ 6.3
+
+-->
