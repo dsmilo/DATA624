@@ -1,3 +1,4 @@
 .Rhistory
 *.html
-*Rproj*
+DATA624.Rproj
+.Rproj.user

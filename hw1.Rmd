@@ -3,6 +3,8 @@ title: 'DATA 624: Homework 1'
 author: "Dan Smilowitz"
 date: "October 17, 2017"
 output: 
+  word_document: 
+    highlight: pygments
   html_document: 
     highlight: pygments
     theme: flatly
@@ -308,8 +310,7 @@ autoplot(reseas_plastics) +
 
 ## KJ 3.1
 ```{r kj_3-1_load}
-library(mlbench)
-data(Glass)
+data("Glass", package = "mlbench")
 ```
 
 
@@ -376,7 +377,7 @@ For the skewed predictors identified above, a Box-Cox transformation may improve
 
 ## KJ 3.2
 ```{r kj_3-2_load}
-data(Soybean)
+data("Soybean", package = "mlbench")
 ```
 
 
@@ -485,36 +486,258 @@ The classes *2-4-d-injury*, *cyst-nematode*, and *herbicide-injury* show nearly 
 
 
 ## HA 7.1
-Data set `books` contains the daily sales of paperback and hardcover books at the same store. The task is to forecast the next four days' sales for paperback and hardcover books.
+```{r ha_7-1_load}
+data("books")
+```
 
 ### Part a
-Plot the series and discuss the main features of the data.
+```{r ha_7-1_a}
+autoplot(books) +
+  labs(title = "Daily sales of paperback and hardcover books",
+       x = "Day", y = "Number of books sold") +
+  scale_color_discrete("Book format") +
+  theme(legend.position = "bottom")
+```
+
+The data for both book formats show an upward trend; a slight cyclical behavior is also apparent, though it does not appear to be seasonal.
+
 
 ### Part b
-Use simple exponential smoothing with the `ses` function (setting `initial="simple"`) and explore different values of $\alpha$ for the paperback series. Record the within-sample SSE for the one-step forecasts. Plot SSE against $\alpha$ and find which value of $\alpha$ works best. What is the effect of $\alpha$ on the forecasts?
+```{r ha_7-1_paperback-b-iterate}
+# separate paperback series
+paperback <- books[, "Paperback"]
+# create containers for results
+alpha_paperback <- numeric()
+sse_paperback <- numeric()
+# loop through possible values of alpha in increments of 0.01
+for (alpha in seq(0, 1, 0.01)) {
+  # get fit and associated SSE; save to list
+  fit <- ses(paperback, initial = "simple", alpha = alpha)
+  SSE <- sum((paperback - fit$fitted)^2)
+  # store alpha and SSE values
+  alpha_paperback <- c(alpha_paperback, alpha)
+  sse_paperback <- c(sse_paperback, SSE)
+}
+# combine into data frame and plot
+fits_paperback <- data_frame(alpha = alpha_paperback, SSE = sse_paperback)
+ggplot(fits_paperback, aes(x = alpha, y = SSE)) +
+  geom_line() +
+  labs(title = "SSE of fitted exponential smoothed values of paperback book sales",
+       subtitle = expression("With varying "*alpha*" and \"simple\" initial value"),
+       x = expression(alpha))
+```
 
-### Part c
-Now let ses select the optimal value of $\alpha$. Use this value to generate forecasts for the next four days. Compare your results with 2.
 
-### Part d
-Repeat but with `initial="optimal"`. How much difference does an optimal initial level make?
-Repeat steps (b)-(d) with the `hardcover` series.
+It is clear from the plot that the value of $\alpha$ affects the accuracy of forecasts.  From the plot, it appears that the best value of $\alpha$ (corresponding to the lowest SSE) is between 0.125 and 0.25.  This can be calculated to show that the SSE is optimized with $\alpha = `r fits_paperback %>% slice(which.min(SSE)) %>% pull(alpha)`$:
+```{r ha_7-1_paperback-b-best}
+(paperback_loop_alpha <- fits_paperback %>% slice(which.min(SSE)))
+```
+
+
+### Parts c & d
+Using `ses` without specifying an $\alpha$ parameter returns a value similar to that observed above:
+```{r ha_7-1_paperback-c}
+paperback_simple <- ses(paperback, initial = "simple", h = 4)
+(paperback_simple_alpha <- paperback_simple$model$par["alpha"])
+```
+
+Performing this again with `initial="optimal"` yields a result that is a fair deal off:
+```{r ha_7-1_paperback-d}
+paperback_opt <- ses(paperback, initial = "optimal", h = 4)
+(paperback_opt_alpha <- paperback_opt$model$par["alpha"])
+```
+
+A comparison of the $\alpha$ values and associated SSEs is presented below:
+```{r ha_7-1_paperback-d-compare}
+emphasize.strong.cols(1)
+data_frame(Method = c("Loop", "SES simple", "SES optimal"),
+           alpha = c(paperback_loop_alpha$alpha,
+                     paperback_simple_alpha,
+                     paperback_opt_alpha),
+           SSE = c(paperback_loop_alpha$SSE,
+                   sum((paperback_simple$fitted - paperback)^2),
+                   sum((paperback_opt$fitted - paperback)^2))) %>% 
+  pander()
+```
+
+It can be seen that although the values of $\alpha$ differ between methods, the SSE does not vary tremendously.
+
+
+
+### Hardcover
+```{r ha_7-1_hardcover-calc}
+# separate paperback series
+hardcover <- books[, "Hardcover"]
+
+## part b -- loop approach
+# create containers for results
+alpha_hardcover <- numeric()
+sse_hardcover <- numeric()
+# loop through possible values of alpha in increments of 0.01
+for (alpha in seq(0, 1, 0.01)) {
+  # get fit and associated SSE; save to list
+  fit <- ses(hardcover, initial = "simple", alpha = alpha)
+  SSE <- sum((hardcover - fit$fitted)^2)
+  # store alpha and SSE values
+  alpha_hardcover <- c(alpha_hardcover, alpha)
+  sse_hardcover <- c(sse_hardcover, SSE)
+}
+# combine into data frame and plot
+fits_hardcover <- data_frame(alpha = alpha_hardcover, SSE = sse_hardcover)
+ggplot(fits_hardcover, aes(x = alpha, y = SSE)) +
+  geom_line() +
+  labs(title = "SSE of fitted exponential smoothed values of hardcover book sales",
+       subtitle = expression("With varying "*alpha*" and \"simple\" initial value"),
+       x = expression(alpha))
+# get best value
+hardcover_loop_alpha <- fits_hardcover %>% slice(which.min(SSE))
+
+## parts c & d -- ses selection
+# with initial = "simple"
+hardcover_simple <- ses(hardcover, initial = "simple", h = 4)
+hardcover_simple_alpha <- hardcover_simple$model$par["alpha"]
+# with initial = "optimal"
+hardcover_opt <- ses(hardcover, initial = "optimal", h = 4)
+hardcover_opt_alpha <- hardcover_opt$model$par["alpha"]
+```
+
+
+The resulting values of $\alpha$ and associated SSE are shown below:
+```{r ha_7-1_hardcover-compare, echo=FALSE}
+emphasize.strong.cols(1)
+data_frame(Method = c("Loop", "SES simple", "SES optimal"),
+           alpha = c(hardcover_loop_alpha$alpha,
+                     hardcover_simple_alpha,
+                     hardcover_opt_alpha),
+           SSE = c(hardcover_loop_alpha$SSE,
+                   sum((hardcover_simple$fitted - hardcover)^2),
+                   sum((hardcover_opt$fitted - hardcover)^2))) %>% 
+  pander()
+```
+
+As for the paperback series, the value of $\alpha$ with `initial="simple"` is very close to the value derived by iterating through a loop, and the value with `initial="optimal"` is a bit different than the other two, though to a lesser degree in this case.  The SSE values vary even less for the hardcover series, and are nearly identical for the loop & SES simple methods.
+
 
 
 ## HA 7.2
-Apply Holt's linear method to the `paperback` and `hardback` series and compute four-day forecasts in each case.
+```{r ha_7-2_forecast}
+# get linear holt fits for each series with 4-day forecast & default arguments
+paperback_holt <- holt(paperback, h = 4)
+hardcover_holt <- holt(hardcover, h = 4)
+```
 
 ### Part a
-Compare the SSE measures of Holt's method for the two series to those of simple exponential smoothing in the previous question. Discuss the merits of the two forecasting methods for these data sets.
+The SSE measures for the above forecasts can be compared to the exponential smoothing forecasts prepared in part d of question 7.1 by squaring and summing the residuals:
+```{r ha_7-2_a-paperback}
+# get SSE values for paperback forecasts
+sse_opt_paperback <- sum(paperback_opt$residuals^2)
+sse_holt_paperback <- sum(paperback_holt$residuals^2)
+
+# get SSE values for hardcover forecasts
+sse_opt_hardcover <- sum(hardcover_opt$residuals^2)
+sse_holt_hardcover <- sum(hardcover_holt$residuals^2)
+
+# gather results into matrix
+holt_v_opt <- matrix(c(sse_opt_paperback, sse_holt_paperback,
+                       sse_opt_hardcover, sse_holt_hardcover),
+                     nrow = 2, byrow = TRUE,
+                     dimnames = list(c("Paperback", "Hardcover"), c("SES", "Holt")))
+```
+
+`r pander(holt_v_opt, caption = "Comparison of SSE measure for SES & Holt methods")`
+
+The table clearly shows that Holt's method yields a much slower error in the forecast.  This method is more appropriate for these two data series, as it is able to capture the upwards trend noted in part a of the previous question.
+
 
 ### Part b
-Compare the forecasts for the two series using both methods. Which do you think is best?
+The two forecasts for the paperback series are presented below:
+
+```{r ha_7-2_b-paperback}
+gridExtra::grid.arrange(
+  autoplot(paperback_opt) +
+    labs(title = "Simple exponential smoothing forecast of paperback sales",
+         subtitle = expression("Using optimal value of "*alpha),
+         x = "Day", y = NULL) +
+    theme(legend.position = "none"),
+  autoplot(paperback_holt) +
+    labs(title = "Holt's method forecast of paperback sales",
+         subtitle = "Using linear trend",
+         x = "Day", y = NULL) +
+    theme(legend.position = "none"),
+  ncol = 1)
+```
+
+The two forecasts for the hardcover series are presented below:
+
+```{r ha_7-2_b-hardcover}
+gridExtra::grid.arrange(
+  autoplot(hardcover_opt) +
+    labs(title = "Simple exponential smoothing forecast of hardcover sales",
+         subtitle = expression("Using optimal value of "*alpha),
+         x = "Day", y = NULL) +
+    theme(legend.position = "none"),
+  autoplot(hardcover_holt) +
+    labs(title = "Holt's method forecast of hardcover sales",
+         subtitle = "Using linear trend",
+         x = "Day", y = NULL) +
+    theme(legend.position = "none"),
+  ncol = 1)
+```
+
+For both series, the Holt's method linear forecast appears to better capture the upward trend in the data, as discussed in part b, while the simple exponential smoothing forecast fails to do so.
+
 
 ### Part c
-Calculate a 95% prediction interval for the first forecast for each series using both methods, assuming normal errors. Compare your forecasts with those produced by R.
+The 95% prediction interval can be generated using the equation $\hat{y}_t \pm 1.96 \times \sqrt{\hat{\sigma^2}}$ for each of the four forecasts:
+```{r ha_7-2_c}
+# manually calculate prediction intervals
+paper_opt_pi_man <- c(paperback_opt$mean[1] - 1.96 * sqrt(paperback_opt$model$sigma2),
+                      paperback_opt$mean[1] + 1.96 * sqrt(paperback_opt$model$sigma2))
+paper_holt_pi_man <- c(paperback_holt$mean[1] - 1.96 * sqrt(paperback_holt$model$sigma2),
+                       paperback_holt$mean[1] + 1.96 * sqrt(paperback_holt$model$sigma2))
+hard_opt_pi_man <- c(hardcover_opt$mean[1] - 1.96 * sqrt(hardcover_opt$model$sigma2),
+                     hardcover_opt$mean[1] + 1.96 * sqrt(hardcover_opt$model$sigma2))
+hard_holt_pi_man <- c(hardcover_holt$mean[1] - 1.96 * sqrt(hardcover_holt$model$sigma2),
+                      hardcover_holt$mean[1] + 1.96 * sqrt(hardcover_holt$model$sigma2))
+
+# extract prediction intervals calculated by R
+paper_opt_pi_r <- unname(c(paperback_opt$lower[1, "95%"], paperback_opt$upper[1, "95%"]))
+paper_holt_pi_r <- unname(c(paperback_holt$lower[1, "95%"], paperback_holt$upper[1, "95%"]))
+hard_opt_pi_r <- unname(c(hardcover_opt$lower[1, "95%"], hardcover_opt$upper[1, "95%"]))
+hard_holt_pi_r <- unname(c(hardcover_holt$lower[1, "95%"], hardcover_holt$upper[1, "95%"]))
+
+# collect into matrix
+pi_matrix <- matrix(c(paper_opt_pi_man, paper_opt_pi_r,
+                      paper_holt_pi_man, paper_holt_pi_r,
+                      hard_opt_pi_man, hard_opt_pi_r,
+                      hard_holt_pi_man, hard_holt_pi_r),
+                    ncol = 4, byrow = TRUE,
+                    dimnames = list(c("Paperback SES", "Paperback Holt",
+                                      "Hardcover SES", "Hardcover Holt"),
+                                    c("Manual Lower", "Manual Upper",
+                                      "R Lower", "R Upper")))
+```
+
+`r pander(pi_matrix)`
+
+As seen in the table above, the manually-calculated prediction intervals are equivalent to those calculated by R.
+
 
 <!--
-## HA 8.?
+## HA 8.1
+
+
+
+## HA 8.2
+
+
+
+## HA 8.6
+
+
+
+## HA 8.8
+
 
 
 ## KJ 6.3
