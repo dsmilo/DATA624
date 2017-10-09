@@ -4,6 +4,8 @@ author: "Dan Smilowitz"
 date: "October 17, 2017"
 output: 
   word_document: 
+    fig_height: 5
+    fig_width: 7
     highlight: pygments
   html_document: 
     highlight: pygments
@@ -21,7 +23,7 @@ theme_set(theme_light())#base_family = "Calibri"))
 library(pander)
 ```
 
-## HA 2.1
+# HA 2.1
 ```{r ha_2-1_load-data}
 library(fma)
 data("dole")
@@ -29,7 +31,7 @@ data("usdeaths")
 data("bricksq")
 ```
 
-### Unemployment Benefits
+## Unemployment Benefits
 ```{r ha_2-1_dole}
 autoplot(dole) +
   labs(title = "People on unemployed benefits in Australia",
@@ -50,7 +52,7 @@ autoplot(BoxCox(dole, lambda_dole)) +
 This transformation provides greater insight into variation in the data before 1975 -- in the un-transformed plot, the data appeared to be nearly zero, but here it can be clearly seen that there is variation of non-trivial degree in this period.  The significant growth in values after 1975 is still apparent, as each horizontal line in the grid represents values more than tripling.
 
 
-### Accidental Deaths
+## Accidental Deaths
 ```{r ha_2-1_usdeaths}
 autoplot(usdeaths) +
   labs(title = "Accidental deaths in the United States",
@@ -61,7 +63,7 @@ autoplot(usdeaths) +
 In this case, since the magnitude of observations does not significantly change over time, a transformation is not needed.
 
 
-### Brick Production
+## Brick Production
 ```{r ha_2-1_bricksq}
 autoplot(bricksq) +
   labs(title = "Production of bricks at Portland, Australia",
@@ -83,14 +85,13 @@ This transformation does not provide any significant differences in the way the 
 
 
 
-## HA 2.3
+# HA 2.3
 ```{r ha_2-3_load}
 data("ibmclose")
 ```
 
-
-### Part a
-The plots below show the IBM closing stock prices, change relative to the first value, andas the daily percentage change:
+## Part a
+The plots below show the IBM closing stock prices, change relative to the first value, and as the daily percentage change:
 
 ```{r ha_2-3_explore}
 ibm_tot_diff <- ibmclose / ibmclose[1] - 1
@@ -119,7 +120,7 @@ autoplot(ibm_day_diff) +
 The plots above show a steady rise in price, followed by a slight decline then a steep decline, all showing daily variation generally between -2.5% and 2.5%.  Near the end of this decline, and into the subsequent steady increase, the daily returns become increasingly volatile.  The price then decreases again slowly with a volatility lower than the period immediately preceding it, but still higher than in the initial period of 200 days.
 
 
-### Part b
+## Part b
 The data is split into a training and testing set with 300 and 69 observations, respectively:
 ```{r ha_2-3_split}
 ibm_train <- ibmclose[1:300]
@@ -127,7 +128,7 @@ ibm_test  <- ibmclose[301:369]
 ```
 
 
-### Part c
+## Part c
 Three forecasts are performed on the split data:
 
   - Random walk with drift
@@ -179,13 +180,13 @@ From this plot, it is clear that the naive model fails to capture overall trend 
 
 
 
-## HA 6.2
+# HA 6.2
 ```{r ha_6-2_load}
 data("plastics")
 ```
 
 
-### Part a
+## Part a
 ```{r ha_6-2_a}
 autoplot(plastics) +
   labs(title = "Plastics manufacturer sales",
@@ -197,7 +198,7 @@ autoplot(plastics) +
 From this plot, there is a clear annual seasonality where sales rise from roughly February through roughly July or August, then fall through the end of the year through roughly the following February.  A clear increasing trend can be seen as well -- outside of the first few months of year 2, each month's sales show an increase from the same month in the prior year.
 
 
-### Part b
+## Part b
 The multiplicative decomposition, and resulting seasonal and trend indices, are presented below:
 ```{r ha_6-2_b}
 fit_plastics <- decompose(plastics, "m")
@@ -205,7 +206,7 @@ fit_plastics[c("seasonal", "trend")]
 ```
 
 
-### Part c
+## Part c
 ```{r ha_6-2_c}
 autoplot(fit_plastics) +
   labs(title = "Decomposition of monthly plastic sales",
@@ -216,7 +217,7 @@ autoplot(fit_plastics) +
 The seasonal and trend indices, as shown above and illustrated in the above graph, support the interpretation from part a -- there is an annual rising-then-falling seasonality running from February-February and a clear upward trend.
 
 
-### Part d
+## Part d
 For a multiplicative time series, the seasonally adjusted data is given by dividing the original data by the seasonal component ($y_t / S_t$)
 ```{r ha_6-2_d}
 adj_plastics <- plastics / fit_plastics[["seasonal"]]
@@ -228,7 +229,7 @@ autoplot(adj_plastics) +
 ```
 
 
-### Part e
+## Part e
 The 31st observation, corresponding to 2.5 years into the time window, is increased from 1303 to 2000:
 ```{r ha_6-2_e-out}
 out_plastics <- plastics
@@ -250,7 +251,7 @@ gridExtra::grid.arrange(
 The addition of this outlier is observed in the seasonally adjusted data.  The change at $t=31$ in the seasonally adjusted data is less than the raw change to the value, indicating that some of the change is incorporated into the seasonal data.
 
 
-### Part f
+## Part f
 Performing a similar manipulation as in parts d and e, this time changing the final value of the initial time series from 1013 to 1500:
 
 ```{r ha_6-2_f}
@@ -271,7 +272,7 @@ gridExtra::grid.arrange(
 In this case, the seasonally adjusted data absorbs almost all of the change in the data, showing that the outlier at end of the period affects the seasonality of the time series less strongly than an outlier in the middle.
 
 
-### Part g
+## Part g
 A random walk with drift is performed on the seasonally adjusted plastic sales data from part d to forecast the next 12 months of seasonally adjusted data
 ```{r ha_6-2_g}
 drift_plastics <- rwf(adj_plastics, drift = TRUE, h = 12, level = c(95))
@@ -285,9 +286,9 @@ autoplot(drift_plastics) +
 ```
 
 
-### Part h
+## Part h
 Reseasonalize the results to give forecasts on the original scale.
-The reseasonalized results are given by multiplying the seasonal component (`figure`) of the decomposed series by mutiplying the values (`mean`), and confidence bounds (`lower` and `upper`) of the forecast.  These are plotted alongside the original values below:
+The reseasonalized results are given by multiplying the seasonal component (`figure`) of the decomposed series by multiplying the values (`mean`), and confidence bounds (`lower` and `upper`) of the forecast.  These are plotted alongside the original values below:
 
 ```{r ha_6-2_h}
 reseas_plastics <- drift_plastics
@@ -308,13 +309,13 @@ autoplot(reseas_plastics) +
 
 
 
-## KJ 3.1
+# KJ 3.1
 ```{r kj_3-1_load}
 data("Glass", package = "mlbench")
 ```
 
 
-### Parts a & b
+## Parts a & b
 The distributions of each predictor are shown below:
 
 ```{r kj_3-1_a-hist}
@@ -370,18 +371,18 @@ Glass %>%
 From this visualization, it can be seen that there is a high positive correlation (0.81) between `RI` and `Ca`; the strongest positive correlation not involving the `RI` predictor is 0.48 between `Al` and `Ba`.  The strongest negative correlation (-0.54) exists between `RI` and `Si`, followed by -0.49 between `Ba` and `Mg`.  There are five predictor pairs with correlation of absolute value less than 0.05.
 
 
-### Part c
-For the skewed predictors identified above, a Box-Cox transformation may improve the classifcation model by reducing or removing the skew.  For the six predictors with high concentrations of outliers, a spatial sign transformation may be useful if the model is sensitive to outliers.
+## Part c
+For the skewed predictors identified above, a Box-Cox transformation may improve the classification model by reducing or removing the skew.  For the six predictors with high concentrations of outliers, a spatial sign transformation may be useful if the model is sensitive to outliers.
 
 
 
-## KJ 3.2
+# KJ 3.2
 ```{r kj_3-2_load}
 data("Soybean", package = "mlbench")
 ```
 
 
-### Part a
+## Part a
 The following predictors meet the degeneracy criteria set forth in the text:
 
   - Fraction of unique values over sample size (`Unique_Ratio`) under 10%
@@ -409,7 +410,7 @@ degen_soybean <- Soybean %>%
 `r pander(degen_soybean)`
 
 
-### Part b
+## Part b
 The predictors are shown below by the portion of observations with missing data:
 
 ```{r kj_3-2_b-predictor}
@@ -448,7 +449,7 @@ missing_class <- Soybean %>%
 The *phytophthora-rot* shows over 5% missing values; the *2-4-d-injury* and *cyst-nematode* show between 1-2% missing values; the *diaporthe-pod-&-stem-blight* and *herbicide-injury* show under 1% missing values; the remaining 14 classes show zero missing values.  Note that these percentages are an indication of the number of observations of each variable missing, i.e. the number of missing data points rather than observations that contain missing data points.
 
 
-### Part c
+## Part c
 As outlined in Part a, the variables *leaf.mild*, *mycelium*, and *sclerotia* are degenerate -- these variables should be removed.  To investigate the appropriate approach for additional missing variables, the patterns of missing values across predictors and classes are investigated:
 ```{r kj_3-2_c}
 # get degenerative predictors
@@ -485,12 +486,12 @@ The classes *2-4-d-injury*, *cyst-nematode*, and *herbicide-injury* show nearly 
 
 
 
-## HA 7.1
+# HA 7.1
 ```{r ha_7-1_load}
 data("books")
 ```
 
-### Part a
+## Part a
 ```{r ha_7-1_a}
 autoplot(books) +
   labs(title = "Daily sales of paperback and hardcover books",
@@ -502,7 +503,7 @@ autoplot(books) +
 The data for both book formats show an upward trend; a slight cyclical behavior is also apparent, though it does not appear to be seasonal.
 
 
-### Part b
+## Part b
 ```{r ha_7-1_paperback-b-iterate}
 # separate paperback series
 paperback <- books[, "Paperback"]
@@ -534,7 +535,7 @@ It is clear from the plot that the value of $\alpha$ affects the accuracy of for
 ```
 
 
-### Parts c & d
+## Parts c & d
 Using `ses` without specifying an $\alpha$ parameter returns a value similar to that observed above:
 ```{r ha_7-1_paperback-c}
 paperback_simple <- ses(paperback, initial = "simple", h = 4)
@@ -564,7 +565,7 @@ It can be seen that although the values of $\alpha$ differ between methods, the 
 
 
 
-### Hardcover
+## Hardcover
 ```{r ha_7-1_hardcover-calc}
 # separate paperback series
 hardcover <- books[, "Hardcover"]
@@ -619,14 +620,14 @@ As for the paperback series, the value of $\alpha$ with `initial="simple"` is ve
 
 
 
-## HA 7.2
+# HA 7.2
 ```{r ha_7-2_forecast}
 # get linear holt fits for each series with 4-day forecast & default arguments
 paperback_holt <- holt(paperback, h = 4)
 hardcover_holt <- holt(hardcover, h = 4)
 ```
 
-### Part a
+## Part a
 The SSE measures for the above forecasts can be compared to the exponential smoothing forecasts prepared in part d of question 7.1 by squaring and summing the residuals:
 ```{r ha_7-2_a-paperback}
 # get SSE values for paperback forecasts
@@ -649,7 +650,7 @@ holt_v_opt <- matrix(c(sse_opt_paperback, sse_holt_paperback,
 The table clearly shows that Holt's method yields a much slower error in the forecast.  This method is more appropriate for these two data series, as it is able to capture the upwards trend noted in part a of the previous question.
 
 
-### Part b
+## Part b
 The two forecasts for the paperback series are presented below:
 
 ```{r ha_7-2_b-paperback}
@@ -687,7 +688,7 @@ gridExtra::grid.arrange(
 For both series, the Holt's method linear forecast appears to better capture the upward trend in the data, as discussed in part b, while the simple exponential smoothing forecast fails to do so.
 
 
-### Part c
+## Part c
 The 95% prediction interval can be generated using the equation $\hat{y}_t \pm 1.96 \times \sqrt{\hat{\sigma^2}}$ for each of the four forecasts:
 ```{r ha_7-2_c}
 # manually calculate prediction intervals
@@ -723,23 +724,339 @@ pi_matrix <- matrix(c(paper_opt_pi_man, paper_opt_pi_r,
 As seen in the table above, the manually-calculated prediction intervals are equivalent to those calculated by R.
 
 
+
+# HA 8.1
+![](8-1-acf.png)
+
+The three ACF figures show different critical values indicating autocorrelation, as well as a differing number of lags along the x axis.  Both of these differences are due to the number of observations in the samples -- the critical values scale by a factor of $T^{-1/2}$.
+
+All three figures indicate that the associated data are white noise, as all vertical lines fall within the critical values indicated by the dotted blue lines.
+
+
+
+# HA 8.2
+Explain how each plot shows the series is non-stationary and should be differenced.
+
+The plot of IBM closing stock prices, as well as the ACF and PACF of the series are presented below:
+```{r ha_8-2}
+ggtsdisplay(ibmclose, main = "IBM stock closing prices", points = FALSE,
+            xlab = "Day", ylab = "Closing price")
+```
+
+The plot of the time series shows some clear trends -- first upwards, then downwards, then upwards again followed by a decline near the end; these trends make the series non-stationary.  The ACF plot shows all values $r_k$ well outside the bounds of the critical values, indicating there is a high autoregressive nature of the series.  The PACF shows $r_1 \approx 1$ with all other $r_k$ below the critical value; this is indicative of a random walk and therefore non-stationary.
+
+
+
+# HA 8.6
+```{r ha_8-6_load}
+data("wmurders", package = "fpp")
+```
+
+
+## Parts a-c
+The time series is plotted below:
+```{r ha_8-6_a-plot}
+autoplot(wmurders) +
+  labs(title = "Number of women murdered in United States", subtitle = "1950-2004",
+       x = "Year", y = "Murders per 100,000 population")
+```
+
+The variance of the series appears to increase with the level of the time series -- as such, the series will be log-transformed.  The series is clearly non-stationary, as it displays trend behavior.  There is no apparent seasonality, so a simple difference is taken.
+
+The transformed, differenced series is plotted below, alongside ACF & PACF figures:
+```{r ha_8-6_a-log}
+ggtsdisplay(diff(log(wmurders)),
+            main = "Differenced logarithm of number of women murdered in United States",
+            xlab = "Year", points = FALSE)
+```
+
+This series appears sufficiently stationary.  There are spikes at $k=2$ in both the ACF and PACF figures, suggesting that a AR(2) or MA(2) model is appropriate for the differenced data.  The former is selected, yielding an ARIMA(2, 1, 0) model.  There does not appear to be any drift in the original dataset, so a constant is not included in the model.  This model can be written in backshift notation as
+$$\left(1- \phi_1B - \phi_2B^2\right)\left(1-B\right) y_t = e_t$$
+
+
+
+## Part d
+A log transformation is equivalent to a Box-Cox transformation with $\lambda = 0$, so this parameter is fed into the `Arima` function:
+```{r ha_8-6_d-fit}
+murder_fit <- Arima(wmurders, order = c(2, 1, 0), lambda = 0)
+```
+
+The residuals of this fit are explored below:
+```{r ha_8-6_d-resid}
+murder_resid <- residuals(murder_fit)
+ggtsdisplay(murder_resid, plot.type = "histogram", points = FALSE,
+            main = "Residuals for ARIMA(2,1,0) fit of number of women murdered",
+            xlab = "Year", ylab = "Residual")
+```
+
+From the top plot, it can be seen that the residuals have a near-zero mean, and the variance in the residuals is near-constant; the ACF plot shows there is no significant correlation between residuals; the histogram and accompanying density plot appear to approximate a normal distribution.  From these results, the model appears satisfactory -- this is confirmed using a portmanteau test (using $K = p + q = 2$ and a lag of 15 to correspond to the ACF plot), which returns a result $>> 0.05$:
+```{r ha_8-6_d-port}
+Box.test(murder_resid, type = "L", fitdf = 2, lag = 15)
+```
+
+
+## Parts e & f
+```{r ha_8-6_e-fcast}
+murder_fcast <- forecast(murder_fit, 3)
+autoplot(murder_fcast) + theme(legend.position = "none")
+```
+
+The forecast values, rounded to 3 decimal places, are given below:
+`r pander(round(murder_fcast$mean, 3))`
+
+
+### Manual Calculation
+Each of the forecasts are checked manually below:
+```{r ha_8-6_e-manual, echo=FALSE}
+# extract coefficients for display
+phi1 <- coefficients(murder_fit)[1]
+phi2 <- coefficients(murder_fit)[2]
+B1 <- 1 + phi1
+B2 <- phi2 - phi1
+B3 <- -phi2
+# extract tail for display
+y_lag <- rev(tail(log(wmurders), 3))
+# create estimates
+y_log_1 <- B1 * y_lag[1] + B2 * y_lag[2] + B3 * y_lag[3]
+y_hat_1 <- exp(y_log_1)
+y_log_2 <- B1 * y_log_1 + B2 * y_lag[1] + B3 * y_lag[2]
+y_hat_2 <- exp(y_log_2)
+y_log_3 <- B1 * y_log_2 + B2 * y_log_1 + B3 * y_lag[1]
+y_hat_3 <- exp(y_log_3)
+```
+
+The equation from part c can be expanded to be rewritten as
+$$[1 - (1 + \phi_1)B + (\phi_1 - \phi_2)B^2 + \phi_2B^3]y_t = e_t$$
+The backshift operator can be applied and the equation rearranged to give
+$$y_t = (1 + \phi_1)y_{t-1} + (\phi_2 - \phi_1)y_{t-2} - \phi_2 y_{t-3} + e_t$$
+This can now be rearranged to isolate for $y_t$ and used to forecast for the next 3 periods, using the log-transformed series and $\phi_1 = `r round(phi1, 3)`$ and $\phi_2 = `r round(phi2, 3)`$:
+
+$$\begin{aligned}
+y_{T+1} &= (1 + \phi_1)y_{T} + (\phi_2 - \phi_1)y_{T-1} - \phi_2 y_{T-2} + e_{T+1} \\
+         &= (`r round(B1, 3)`) `r round(y_lag[1], 3)` -
+            (`r round(B2, 3)`) `r round(y_lag[2], 3)` +
+            (`r round(B3, 3)`) `r round(y_lag[3], 3)` + 0 \\
+         &= `r round(y_log_1, 3)`
+\end{aligned}$$
+
+To transfer back to the original scale, $$\hat{y}_{T+1|T} = e^{`r round(y_log_1, 3)`} \approx `r round(y_hat_1, 3)`$$
+
+For the next prediction,
+$$\begin{aligned}
+y_{T+2} &= (1 + \phi_1)y_{T+1} + (\phi_2 - \phi_1)y_{T} - \phi_2 y_{T-1} + e_{T+2} \\
+         &= (`r round(B1, 3)`) `r round(y_log_1, 3)` -
+            (`r round(B2, 3)`) `r round(y_lag[1], 3)` +
+            (`r round(B3, 3)`) `r round(y_lag[2], 3)` + 0 \\
+         &= `r round(y_log_2, 3)`
+\end{aligned}$$
+
+$$\hat{y}_{T+2|T+1} = e^{`r round(y_log_2, 3)`} \approx `r round(y_hat_2, 3)`$$
+
+Finally,
+$$\begin{aligned}
+y_{T+3} &= (1 + \phi_1)y_{T+2} + (\phi_2 - \phi_1)y_{T+1} - \phi_2 y_{T} + e_{T+3} \\
+         &= (`r round(B1, 3)`) `r round(y_log_2, 3)` -
+            (`r round(B2, 3)`) `r round(y_log_1, 3)` +
+            (`r round(B3, 3)`) `r round(y_lag[1], 3)` + 0 \\
+         &= `r round(y_log_3, 3)`
+\end{aligned}$$
+
+$$\hat{y}_{T+3|T+2} = e^{`r round(y_log_3, 3)`} \approx `r round(y_hat_3, 3)`$$
+
+It can be seen that the derived forecasts match those generated by `forecast`.
+
+
+## Part g
+An `auto.arima` fit is created for the data, setting $\lambda = 0$ to log-transform the data setting the `seasonal` option to false:
+```{r ha_8-6_g-fit}
+(murder_auto <- auto.arima(wmurders, lambda = 0, seasonal = FALSE))
+```
+
+The `auto.arima` model fit is an ARIMA(1, 2, 1) consistently with modifying function arguments.  This obviously differs from the ARIMA(2, 1, 0) used in this problem.
+
+The ARIMA(2, 1, 0) model shows a better $AIC_c$ than the ARIMA(1, 2, 1), but, per the text, "when models are compared using AICc values, it is important that all models have the same orders of differencing."  Since the model selected manually has $d=1$ and the `auto.arima` model has $d=2$, this comparison is not informative.
+
+To compare the validity of the forecasts of two ARIMA models despite different model characteristics, a test set is used to calculate the RMSE on the tail portion of the data.  The `getrmse` function from the text is used for this:
+
+```{r ha_8-6_g-rmse}
+# definte RMSE function
+getrmse <- function(x, h, ...) {
+  train.end <- time(x)[length(x) - h]
+  test.start <- time(x)[length(x) - h + 1]
+  train <- window(x, end = train.end)
+  test <- window(x, start = test.start)
+  fit <- Arima(train, ...)
+  fc <- forecast(fit, h = h)
+  accuracy(fc, test)[2, "RMSE"]
+}
+
+# get RMSEs using test set of last 5 years
+RMSEs <- c(getrmse(wmurders, 3, order = c(2, 1, 0), lambda = 0),
+           getrmse(wmurders, 3, order = c(1, 2, 1), lambda = 0))
+names(RMSEs) <- c("manually selected", "auto.arima selected")
+```
+
+`r pander(RMSEs)`
+
+The table above shows that the auto.arima selected model performs better on the test set, but inspection of a forecast generated by the model reveals a potential issue:
+
+```{r ha_8-6_g-plot}
+autoplot(forecast(murder_auto, 3)) + theme(legend.position = "none")
+```
+
+From the plot above, it can be seen that the ARIMA(1, 2, 1) model extends the drop in rate in recent years continuously.  This is probably less realistic than the ARIMA(2, 1, 0) model's prediction of a steadying of the rate.  It also may explain the higher RMSE of this model against the test set, since the years of the test set illustrate a downward trend.  For the sake of practicality and extensibility, the ARIMA(2, 1, 0) model should be used, even if it means a slight tradeoff in accuracy.
+
+
+# HA 8.8
+```{r ha_8-8_load}
+data("usmelec", package = "fpp")
+```
+
+## Part a
+The raw data and the moving average are presented together in the plot below:
+```{r ha_8-8_a}
+data_frame(Month = time(usmelec),
+           TWh = as.numeric(usmelec),
+           MA = ma(usmelec, order = 12)) %>% 
+  ggplot(aes(x = Month)) +
+  geom_line(aes(y = TWh, col = "Data")) +
+  geom_line(aes(y = MA, col = "MA"), lwd = 1.25) +
+  scale_color_manual(NULL, breaks = c("Data", "MA"), values = c("black", "#F8766D")) +
+  theme(legend.position = c(0.85, 0.15)) +
+  ggtitle(label = "Net electricity generation in US", subtitle = "1985-1996")
+```
+
+It is clear from the moving average in the plot that electricity generation has a stable upward trend.
+
+
+## Parts b & c
+The variation in the data appears to increase; therefore a transformation is investigated:
+```{r ha_8-8_b}
+elec_lambda <- BoxCox.lambda(usmelec)
+elec_trans <- BoxCox(usmelec, elec_lambda)
+```
+
+The data is transformed using the recommended pattern of $\lambda = `r round(elec_lambda, 3)`$.  As identified above, the data is not stationary -- this will not be fixed by the Box-Cox transformation, so differencing is required.  As stated in the text, the series shows two annual peaks; therefore a lag-6 differencing is attempted first:
+```{r ha_8-8_c-6}
+elec_diff <- diff(elec_trans, 6)
+ggtsdisplay(elec_diff, points = FALSE,
+            main = "Differenced (lag-6) Box-Cox transformed US electricity generation",
+            xlab = "Month")
+```
+
+There is still apparent seasonality present in this plot, and the sinusoidal behavior of the ACF plot clearly indicates a lack of stationary behavior; as such, lag-12 differencing is used and checked for stationarity:
+```{r ha_8-8_c-12}
+elec_diff <- diff(elec_trans, 12)
+ggtsdisplay(elec_diff, points = FALSE,
+            main = "Differenced (lag-12) Box-Cox transformed US electricity generation",
+            xlab = "Month")
+```
+
+This lag has successfully eliminated the seasonality and created a stationary time series (as seen in the decaying behavior of the ACF plot).  This makes sense, as the two spikes observed in a given year are not of equal magnitude.
+
+
+## Part d
+The PACF plot above shows a large spike at $k=1$ followed by much lower values -- this suggests $Q = 1$ with $D = 1$ to reflect the lag-12 differencing above.  The ACF shows a large spike at $k=1$ followed by slightly smaller spikes at $k=2$ and $k=3$, after which the values decline.  This suggests fifteen possible models: ARIMA(p, 0, q)(0, 1, 1) for $p, q \in [0, 1, 2, 3]$ excluding the case where $p, q = 0$
+
+The models are calculated and their AIC values returned:
+```{r ha_8-8_d-aic}
+# define function to create models & return AIC values
+elec_aic <- function(p, d, q, P, D, Q) {
+  # create model with Box-Cox and specified ARIMA parameters; extract AIC
+  AIC(Arima(usmelec, order = c(p, d, q), seasonal = c(P, D, Q), lambda = elec_lambda))
+}
+# create possible combinations of p & q
+elec_pq <- expand.grid(p = 0:3, q = 0:3) %>% filter(p > 0 | q > 0)
+# calculate AIC for ARIMA(p, 0, q)(0, 1, 1)
+elec_pq <- elec_pq %>% mutate(aic = pmap_dbl(list(p, 0, q, 0, 1, 1), elec_aic))
+# return best AIC
+elec_pq %>% slice(which.min(aic))
+```
+
+The lowest AIC returned was for $p=2, q = 1$, so the best model is ARIMA(2, 0, 1)(0, 1, 1).  This model is used going forward:
+```{r ha_8-8_d-fit}
+elec_fit <- Arima(usmelec, order = c(2, 0, 1), seasonal = c(0, 1, 1), lambda = elec_lambda)
+```
+
+
+## Part e
+The parameters of the model, returned by `elec_fit$coef`, are as follows:
+
+  - $\phi_1 = `r round(elec_fit[["coef"]][1], 4)`$
+  - $\phi_2 = `r round(elec_fit[["coef"]][2], 4)`$
+  - $\theta_1 = `r round(elec_fit[["coef"]][3], 4)`$
+  - $Theta_1 = `r round(elec_fit[["coef"]][4], 4)`$
+
+A Ljung-Box test returns a p-value > 0.05, suggesting that the residuals may be white noise:
+```{r ha_8-8_e-box}
+Box.test(resid(elec_fit), type = "L", fitdf = 4, lag = 5)
+```
+
+The residuals are further explored via diagnostic plotting:
+```{r ha_8-8_e-resid}
+ggtsdisplay(resid(elec_fit), points = FALSE, plot.type = "histogram",
+            main = "Residuals for ARIMA(2,0,1)(0,1,1) fit of electric generation",
+            xlab = "Month", ylab = "Residual")
+```
+
+The residuals appear to be approximately normally distributed with a mean around zero.  They do not appear to be autocorrelated, but there is a large spike at $k = 15$.
+
+
+## Parts f & g
+The forecast for the next 15 years (180 months) is created and plotted below:
+```{r ha_8-8_f-fcast}
+elec_fcast <- forecast(elec_fit, 180, level = 95)
+autoplot(elec_fcast) + theme(legend.position = "none") +
+  labs(title = "Forecasted US electricity generation, Nov 2010 - Oct 2025",
+       subtitle = "Using ARIMA(2,0,1)(0,1,1) model",
+       x = "Month", y = "TWh")
+```
+
+The forecast shows continued steady growth with the same seasonality observed in the data, with the 95% prediction interval showing the possibility of expanded, possibly exponential, growth or a slight decline.
+
+The link provided in the text only provides data though June 2013; however, its original source, the [US EIA](https://www.eia.gov/totalenergy/data/monthly/#electricity) provides data through present day, accessed via Topic 7.2a.  This data is read in and used to test for accuracy.
+
+```{r ha_8-8_f-accuracy}
+# read in data from EIA website
+elec_new <- read_csv("https://www.eia.gov/totalenergy/data/browser/csv.php?tbl=T07.02A")
+# extract relevant data
+elec_new <- elec_new %>% 
+  # filter for dates after usmelec & generation by all fuel sources (Column_Order 13)
+  # also remove annual totals (denoted by month 13)
+  filter(YYYYMM > 201010, Column_Order == 13, substr(YYYYMM, 5, 6) != "13") %>% 
+  # select needed columns: MSN & Desciprtion are redundant to Column_Name; units identical
+  select(YYYYMM, Value) %>% 
+  # convert from millions of kWh (GWh) to billions of kWh (TWh)
+  mutate(Value = Value / 1000)
+# convert to timeseries
+elec_new <- ts(elec_new$Value, start = c(2010, 11), frequency = 12)
+```
+
+The accuracy of the forecast can now be compared to the actuals (through June 2016) using the `accuracy` function:
+
+`r pander(t(accuracy(elec_fcast, elec_new)))`
+
+The accuracy of these forecasts through the period containing available data is fairly good, with an RMSE on the test set of roughly 16 and an MAPE of 3.98%.  When plotted, the quality of the forecast is also apparent:
+
+```{r ha_8-8_f-plot}
+# create data frame
+data_frame(Month = time(elec_new),
+           Actual = elec_new,
+           Forecast = window(elec_fcast$mean, end = max(time(elec_new)))) %>% 
+  ggplot(aes(x = Month)) +
+  geom_line(aes(y = Forecast, col = "Forecast", lty = "Forecast"), lwd = 1) +
+  geom_line(aes(y = Actual, col = "Actual", lty = "Actual")) +
+  scale_color_discrete("") + scale_linetype_discrete("") +
+  theme(legend.position = c(0, -0.15), legend.direction = "horizontal",
+        legend.justification = c(0, 0.5), legend.background = element_blank()) +
+  labs(title = "Actual and forecast US energy generation, Nov 2010 - Jun 2017",
+       subtitle = "Using ARIMA(2,0,1)(0,1,1) model", y = "TWh",
+       caption = "Source: EIA Monthly Energy Review, September 2017, Topic 7.2a")
+```
+
+While the forecast is fairly accurate in the time window utilized here, it can be seen that it is becoming less accurate with time.  It is likely that the forecast should not be used beyond the roughly 6-year horizon shown in the plot above, and almost definitely not to the full 15-year window generated here.  At this duration, the forecast may be informative, but will likely not be accurate enough to be usable.
+
+
 <!--
-## HA 8.1
-
-
-
-## HA 8.2
-
-
-
-## HA 8.6
-
-
-
-## HA 8.8
-
-
-
 ## KJ 6.3
-
 -->
