@@ -1,5 +1,5 @@
 ---
-title: 'DATA 624: Homework 1'
+title: 'DATA 624 Fall 2017: Homework 1'
 author: "Dan Smilowitz"
 date: "October 17, 2017"
 output: 
@@ -17,9 +17,7 @@ knitr::opts_chunk$set(echo = TRUE, comment = NA, warning = FALSE, message = FALS
                       fig.align = "center")
 library(tidyverse)
 library(scales)
-# library(extrafont)
-# loadfonts(device = "win", quiet = TRUE)
-theme_set(theme_light())#base_family = "Calibri"))
+theme_set(theme_light())
 library(pander)
 ```
 
@@ -287,7 +285,6 @@ autoplot(drift_plastics) +
 
 
 ## Part h
-Reseasonalize the results to give forecasts on the original scale.
 The reseasonalized results are given by multiplying the seasonal component (`figure`) of the decomposed series by multiplying the values (`mean`), and confidence bounds (`lower` and `upper`) of the forecast.  These are plotted alongside the original values below:
 
 ```{r ha_6-2_h}
@@ -735,8 +732,6 @@ All three figures indicate that the associated data are white noise, as all vert
 
 
 # HA 8.2
-Explain how each plot shows the series is non-stationary and should be differenced.
-
 The plot of IBM closing stock prices, as well as the ACF and PACF of the series are presented below:
 ```{r ha_8-2}
 ggtsdisplay(ibmclose, main = "IBM stock closing prices", points = FALSE,
@@ -1057,6 +1052,192 @@ data_frame(Month = time(elec_new),
 While the forecast is fairly accurate in the time window utilized here, it can be seen that it is becoming less accurate with time.  It is likely that the forecast should not be used beyond the roughly 6-year horizon shown in the plot above, and almost definitely not to the full 15-year window generated here.  At this duration, the forecast may be informative, but will likely not be accurate enough to be usable.
 
 
-<!--
-## KJ 6.3
--->
+
+# KJ 6.3
+```{r kj_6-3_load}
+data("ChemicalManufacturingProcess", package = "AppliedPredictiveModeling")
+# split into predictors & response
+chem_pred <- ChemicalManufacturingProcess %>% select(-Yield)
+chem_yield <- ChemicalManufacturingProcess %>% select(Yield)
+```
+
+## Parts b & c
+
+### Imputation & Pre-Processing
+First the total percentage of predictor cells is calculated:
+```{r kj_6-3_b-perc-missing}
+sum(is.na(chem_pred)) 
+```
+
+These 106 values correspond to roughly `r round(sum(is.na(chem_pred)) / (nrow(chem_pred) * ncol(chem_pred)) * 100, 2)`% of all predictor observations.
+
+
+Following the practices established in Chapter 3, the predictors are investigated to determine if any have a relatively high number of missing values
+
+```{r kj_6-3_b-predictor}
+missing_pred <- chem_pred %>% 
+  # convert to tidy format
+  gather(Predictor, Value) %>% 
+  # get number missing by predictor
+  group_by(Predictor) %>% 
+  summarize(Missing = sum(is.na(Value))) %>% 
+  filter(Missing > 0) %>% 
+  arrange(desc(Missing))
+```
+
+`r emphasize.strong.cols(1); pander(missing_pred, style = "grid")`
+
+From the table above, it can be seen that three values (*ManufacturingProcess03*, *ManufacturingProcess11*, and *ManufacturingProcess10*) have the largest number of missing values (15, 10, 9), respectively, all representing over 5% of values missing.  It is worth noting that all 9 observations missing *ManufacturingProcess10* are also missing the *ManufacturingProcess03* and *ManufacturingProcess11* -- the physical meanings of these variables may suggest further investigation into the relationship between these variables.  There are another 11 predictors with 5 missing values and 12 predictors with a single missing value.  The remaining 29 predictors have no missing values.  Notably, all 28 predictors with missing values describe manufacturing processes.
+
+To investigate if the simple median imputation method will be sufficient for the predictors with missing values, the skewness of the predictors is investigated:
+```{r kj_6-3_b-skew}
+chem_pred %>%
+  summarize_at(vars(missing_pred$Predictor),
+               funs(e1071::skewness(., na.rm = TRUE))) %>%
+  slice(1) %>% unlist() %>%
+  qplot(binwidth = 1) +
+  labs(title = "Skewness of missing predictors",
+       x = "Predictor skewness", y = "Number of predictors")
+```
+
+The plot above shows that many of the missing predictors show a negative skewness, with some being quite strong.  Because of this, imputation using the median may not accurately capture variability in the data.  Therefore, k-nearest neighbor imputation will be performed to better capture patterns in the data.
+
+Before imputation, the data will be pre-processed.  As shown above, many of the predictors are heavily skewed.  To lessen the effects of this skewness on the model that will be developed, the data (both predictors and yield) will be Box-Cox transformed, centered, and scaled.  Due to the large number of predictors, predictors with high correlation and/or near-zero variance will also be eliminated.  The `preProcess` function is capable of performing all of these operations -- per the documentation for this function:
+
+  > The operations are applied in this order: zero-variance filter, near-zero variance filter, correlation filter, Box-Cox/Yeo-Johnson/exponential transformation, centering, scaling, range, imputation, PCA, ICA then spatial sign.
+
+```{r kj_6-3_c-preprocess}
+library(caret)
+# set up pre-processing transformation
+chem_preproc <- preProcess(chem_pred, method = c("knnImpute", "center", "scale",
+                                                 "nzv", "corr"))
+# apply pre-processing to data
+chem_pred_trans <- predict(chem_preproc, chem_pred)
+```
+
+Of the original 57 predictors, 46 remain for the model.  These pre-processed predictors can be viewed to confirm the removal of skewness:
+
+```{r kj_6-3_c-plot-all-preds, fig.height=9}
+chem_pred_trans %>%
+  gather(Predictor, Value) %>%
+  mutate(Type = ifelse(substr(Predictor, 1, 1) == "B", "Biological", "Mechanical"),
+         Number = substr(Predictor, nchar(Predictor) - 1, nchar(Predictor)))%>%
+  ggplot(aes(x = Predictor, y = Value)) + 
+  geom_point(aes(col = Type), alpha = 0.1) +
+  scale_x_discrete(NULL, labels = NULL) +
+  scale_y_continuous(limits = c(-10, 10)) +
+  coord_flip() +
+  ggtitle("Distribution of Predictors") +
+  theme(legend.position = c(1, 1), legend.justification = c(1.1, 1.1))
+```
+
+From the plot two things are clear: skewness has been significantly reduced (though some outliers remain); and some mechanical predictors are discrete, taking only certain values.
+
+### Model Tuning
+Before tuning a model, the predictor and yield data are split into training and test sets:
+```{r kj_6-3_c-split}
+# get rows for training subsets
+set.seed(42)  # for replicability
+train_rows <- createDataPartition(chem_yield$Yield, p = 0.75, list = FALSE)
+# create training sets
+chem_pred_train <- chem_pred_trans[train_rows, ]
+chem_yield_train <- chem_yield[train_rows, ]
+# creae test sets
+chem_pred_test <- chem_pred_trans[-train_rows, ]
+chem_yield_test <- chem_yield[-train_rows, ]
+```
+
+The correlation plot below shows that, while highly-correlated values were removed in pre-processing, some correlation between variables still exists:
+```{r kj_6-3_c-corr}
+# get correlations
+cor(chem_pred_trans) %>%
+  # convert to data frame
+  as.data.frame() %>%
+  # change row names to variable
+  rownames_to_column("PredictorX") %>%
+  # convert to tidy format for plotting
+  gather(PredictorY, Cor, -PredictorX) %>%
+  # plot 
+  ggplot(aes(PredictorX, PredictorY)) +
+  geom_raster(aes(fill = Cor)) +
+  scale_x_discrete(NULL, labels = NULL) + scale_y_discrete(NULL, labels = NULL) +
+  viridis::scale_fill_viridis(NULL) +
+  ggtitle("Correlation between predictors") +
+  theme(legend.position = "bottom")
+```
+
+Because of this correlation, a dimensionality reduction may yield a more parsimonious model.  For interpretability, a partial least squares model is used.
+
+```{r kj_6-3_c-train}
+# use 15-fold cross-validation
+set.seed(100)  # for replicability
+pls_ctrl <- trainControl(method = "cv", number = 15)
+# train model; investigate up to 20 components
+chem_pls <- train(x = chem_pred_train, y = chem_yield_train,
+                  method = "pls", tuneLength = 20, trControl = pls_ctrl)
+```
+
+The optimal value of the RMSE metric used to select the optimal model is 1.1859, which is achieved using 5 PLS components.  This is illustrated in the plot of 3 performance metrics below:
+
+```{r kj_6-3_c-metrics}
+chem_pls$results %>% 
+  ggplot(aes(x = ncomp)) +
+  geom_line(aes(y = RMSE, col = "RMSE")) +
+  geom_line(aes(y = Rsquared, col = "R-squared")) +
+  geom_line(aes(y = MAE, col = "MAE")) +
+  geom_point(data = data_frame(Metric = c("RMSE", "R-squared", "MAE"),
+                               ncomp = c(which.min(chem_pls$results$RMSE),
+                                         which.max(chem_pls$results$Rsquared),
+                                         which.min(chem_pls$results$MAE)),
+                               Optimal = c(min(chem_pls$results$RMSE),
+                                           max(chem_pls$results$Rsquared),
+                                           min(chem_pls$results$MAE))),
+             aes(x = ncomp, y = Optimal, col = Metric), size = 1.5) +
+  scale_color_discrete("Metric", breaks = c("RMSE", "MAE", "R-squared")) +
+  labs(title = "Accuracy metric performance based on number of components",
+       subtitle = "Using partial least squares model with 15-fold cross-validation",
+       x = "Number of PLS components", y = NULL) +
+  theme(legend.position = "bottom", legend.direction = "horizontal")
+```
+
+
+## Parts d-f
+### Model Performance
+The trained model is used to predict the response, and the performance of the predictions is returned:
+```{r kj_6-3_d}
+chem_results <- predict(chem_pls, chem_pred_test)
+chem_perf <- defaultSummary(data.frame(obs = chem_yield_test, pred = chem_results))
+```
+
+The RMSE for the test set is 1.1832 -- this is slightly better than the RMSE for the resampled training set.
+
+### Predictor Importance & Relationship
+The importance of each predictor in the model is displayed graphically below:
+```{r kj_6-3_e}
+# get & plot variable importance
+chem_imp <- varImp(chem_pls)
+# plot importance
+ggplot(chem_imp, top = 10) + ggtitle("Importance of top 10 predictors for PLS model")
+```
+
+Two of the 10 top predictors are biological; this portion is very near to the share of total predictors available that are biological (21%).
+
+The relationship of the top 6 of these pre-processed predictors is shown below:
+```{r kj_6-3_f}
+# get top 6 predictors
+chem_top <- rownames(chem_imp$importance)[order(chem_imp$importance$Overall, decreasing = TRUE)][1:6]
+# separate top predictors & yield into data frame
+chem_rel <- as.data.frame(cbind(chem_pred_trans, chem_yield)[, c(chem_top, "Yield")])
+# plot to investigate relationships
+chem_rel %>% 
+  # convert to tidy format
+  gather(Predictor, Value, -Yield) %>% 
+  # plot
+  ggplot(aes(x = Value, y = Yield)) +
+  geom_point(alpha = 0.25) +
+  stat_smooth(se = FALSE, method = "glm") +
+  facet_wrap(~ Predictor, nrow = 2, scales = "free") +
+  labs(title = "Relationship of top predictors and yield for chemical process")
+```
+
+Looking at the plots above, especially the generalized linear model fit to each plot, it can be seen that four of the variables (*BiologicalMaterial06*, *ManufacturingProcess09*, *ManufacturingProcess32*, and *ManufacturingProcess33*) have positive relationships with yield, while the other two (*ManufacturingProcess13* and *ManufacturingProcess36*) have a negative relationship with yield.  The variables with positive relationships should be increased, while those with negative relationships are decreased, in order to improve yield from the manufacturing process.  Before acting on this, however, the interactions between these variables and their impact on the response should be investigated.
