@@ -15,6 +15,9 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, comment = NA, warning = FALSE, message = FALSE,
                       fig.align = "center")
+```
+
+```{r packages}
 library(tidyverse)
 library(scales)
 theme_set(theme_light())
@@ -89,7 +92,7 @@ ATM4[which.max(ATM4)] <- median(ATM4, na.rm = TRUE)
 ```
 
 
-## Seasonality, Autoregression, & Moving Averages
+## Fitting
 Viewing the plots of ATM1, ATM2, & ATM4, it appears that there may be some form of seasonality in the withdrawals from the ATMs.  This can be further investigated by viewing the first two months of the data:
 ```{r a-2mo-plot}
 autoplot(ts(ATM_ts[1:61, ])) +
@@ -299,21 +302,96 @@ data_frame(DATE = rep(max(ATM_df$DATE) + 1:31, 4),
 
 
 
-<!--
-# Part B: Forecasting Power
 
+# Part B: Forecasting Power
 ```{r b-load}
 kWh <- read_excel("data/ResidentialCustomerForecastLoad-624.xlsx")
 kWh <- ts(kWh[, "KWH"], start = c(1998, 1), frequency = 12)
 ```
 
+## Data Inspection
+The timeseries is plotted to inspect its features:
 ```{r b-plot}
-autoplot(kWh)
+autoplot(kWh) +
+  labs(title = "Monthly residential power usage",
+       subtitle = "January 1998 - December 2013")
+```
+
+There is a clear seasonality in this data -- it appears to be semi-annual, with a peak every six months, but it may be annual, as the peaks seem to alternate in their height.  This is consistent with problem 8.8 from *Forecasting: Principles and Practice*, completed in homework 1.  There is a very noticeable dip in value in July 2010.  It seems that the variance of the series may increase with its level; therefore a Box-cox transformation is also investigated.
+```{r b-trans-tsplot}
+# get Box-cox paramter
+kWh_lambda <- BoxCox.lambda(kWh)
+kWh_trans <- BoxCox(kWh, kWh_lambda)
 ```
 
 
+## Fitting
+The data, transformed using $\lambda = `r round(kWh_lambda, 3)`$, are plotted below with lag-12 differencing:
+```{r b-diff}
+ggtsdisplay(diff(kWh_trans, 12), points = FALSE,
+            main = "Differenced (lag-12) Box-Cox transformed residential power usage")
+```
+
+The series appears stationary, so no non-seasonal differencing appears necessary.  The decaying seasonal spikes in the PACF suggests a seasonal AR(1) component, while the very quickly-decaying seasonal spikes in the ACF suggest the possibility of a seasonal MA(1) component.  Spikes in the PACF and ACF at $k = 1$ and $k = 4$ suggest non-seasonal AR(1) or AR(4) components, and non-seasonal MA(1) or MA(4) components.  The function used to select the model with lowest AIC in Part A is redefined for use on the `kWh` timeseries with $D = 1$ and $d = 0$:
+```{r b-aic}
+# redefine function
+kWh_aic <- function(p, q, P, Q) {
+  # create model with Box-Cox and specified ARIMA parameters; extract AIC
+  AIC(Arima(kWh, order = c(p, 0, q), seasonal = c(P, 1, Q), lambda = kWh_lambda))
+}
+# create possible combinations except all zero & p = q = 4; P = Q = 1 (returns error)
+expand.grid(p = c(0, 1, 4), q = c(0, 1, 4), P = 0:1, Q = 0:1) %>%
+  filter(p > 0 | q > 0 | P > 0 | Q > 0, p < 4 | q < 4 | P < 1 | Q < 1) %>%
+  # calc AIC for models
+  mutate(aic = pmap_dbl(list(p, q, P, Q), kWh_aic)) %>% 
+  # return best AIC
+  slice(which.min(aic))
+```
+
+The minimum AIC value returned is for the ARIMA(1,0,0)(0,1,1) model; this is used:
+```{r b-fit}
+kWh_fit <- Arima(kWh, order = c(1, 0, 0), seasonal = c(0, 1, 1), lambda = kWh_lambda)
+```
+
+The residuals of this fit are investigated with a Ljung-Box test and diagnostic plotting:
+```{r b-resid}
+Box.test(resid(kWh_fit), type = "L", fitdf = 3, lag = 12)
+ggtsdisplay(resid(kWh_fit), points = FALSE,
+            main = "Residuals for ARIMA(1,0,0)(0,1,1) of residential power usage")
+```
+
+The Ljung-Box test returns a p-value >> 0.05, but the spikes in ACF & PACF at $k = 3$ and $k = 4$ suggest the possibility of AR(3) or MA(3) components (since the spike at $k = 4$ was addressed above).  Investigation of these does not yield any AIC values lower than that of the above-identified model:
+```{r b-aic-3}
+expand.grid(p = c(1, 3), q = c(1, 3)) %>%
+  mutate(aic = pmap_dbl(list(p, q, 0, 1), kWh_aic))
+```
+
+Viewing the residuals of the fit model again with a histogram, the model is acceptable.  The residuals appear to be roughly normally distributed around zero (with the exception of the significant dip in July 2010) without any significant autocorrelation:
+```{r b-resid-3}
+ggtsdisplay(resid(kWh_fit), points = FALSE, plot.type = "histogram",
+            main = "Residuals for ARIMA(1,0,0)(0,1,1) of residential power usage")
+```
 
 
+## Forecasting
+Using the ARIMA(1,0,0)(0,1,1) model, the next year (12 months) are forecast, and this forecast is plotted:
+```{r b-fcast}
+kWh_forecast <- forecast(kWh_fit, 12, level = 95)
+autoplot(kWh_forecast) + 
+    labs(title = "Forecasted residential enery use for 2014",
+         subtitle = "Using ARIMA(1,0,0)(0,1,1) model", x = "Month", y = "kWh") +
+    theme(legend.position = "none")
+```
+
+As expected, the forecast shows annual seasonality while showing some drift due to the non-seasonal autocorrelation.  The forecast values are output to a .csv for inclusion in the required Excel submission:
+```{r b-output}
+data_frame(`YYYY-MMM` = paste0(2014, "-", month.abb),
+           KWH = kWh_forecast$mean) %>% 
+  write_csv("project1_kWh.csv")
+```
+
+
+<!--
 # Part C: Waterflow
 
 Your optional assignment is to time-base sequence the data and aggregate based on hour (example of what this looks like, follows).  Note for multiple recordings within an hour, take the mean.  Then to determine if the data is stationary and can it be forecast.  If so, provide a week forward forecast and present results as above in a Word readable file and the forecast in an Excel readable file.   
