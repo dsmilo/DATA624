@@ -723,7 +723,7 @@ As seen in the table above, the manually-calculated prediction intervals are equ
 
 
 # HA 8.1
-![](8-1-acf.png)
+![](data/8-1-acf.png)
 
 The three ACF figures show different critical values indicating autocorrelation, as well as a differing number of lags along the x axis.  Both of these differences are due to the number of observations in the samples -- the critical values scale by a factor of $T^{-1/2}$.
 

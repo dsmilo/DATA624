@@ -1,0 +1,321 @@
+---
+title: "DATA 624 Fall 2017: Project 1"
+author: "Dan Smilowitz"
+date: "October 24, 2017"
+output: 
+  html_document: 
+    highlight: pygments
+    theme: flatly
+  word_document: 
+    fig_height: 5
+    fig_width: 7
+    highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, warning = FALSE, message = FALSE,
+                      fig.align = "center")
+library(tidyverse)
+library(scales)
+theme_set(theme_light())
+```
+
+
+# Part A: ATM Forecast
+All ATM data is read into R, then converted to a `ts` object with one series for each ATM:
+```{r a-load}
+# read in data
+library(readxl)
+ATM_df <- read_excel("data/ATM624Data.xlsx")
+# drop missing columns, convert each ATM to column, fix date column
+ATM_df <- ATM_df %>%
+  drop_na() %>%
+  spread(ATM, Cash) %>% 
+  mutate(DATE = as.Date(DATE, origin = "1899-12-30")) # in Excel, 1 == 1/1/1900
+# convert to timeseries
+ATM_ts <- ts(ATM_df %>% select(-DATE))
+```
+
+
+## Data Inspection
+The timeseries can be plotted with a separate line for each ATM:
+```{r a-plot-all}
+library(forecast) # to plot ts objects
+autoplot(ATM_ts) +
+  labs(title = "Cash withdrawn from 4 ATMS",
+       subtitle = "May 2009 - April 2010",
+       x = "Day") +
+  scale_y_continuous("Cash withdrawn (hundreds)", labels = dollar) +
+  scale_color_discrete(NULL) +
+  theme(legend.position = c(0.1, 0.8))
+```
+
+The plot is a bit too busy to interpret, so the original data frame object is used instead to try to gain some additional clarity:
+```{r a-plot-df, fig.height=7}
+# convert df back to tidy format for faceted plotting
+ATM_df %>% gather(ATM, Cash, -DATE) %>% 
+  # plot
+  ggplot(aes(x = DATE, y = Cash, col = ATM)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(~ ATM, ncol = 1, scales = "free_y") +
+  labs(title = "Cash withdrawn from 4 ATMs",
+       subtitle = "May 2009 - April 2010",
+       x = "Date") +
+  scale_y_continuous("Cash withdrawn (hundreds)", labels = dollar)
+```
+
+From this chart, it is clear that ATM1 & ATM2 see a fair amount of variation between \$0-\$15,000, with only a few observations exceeding these values.  ATM3 shows zero withdrawals for most of the year until the final 3 days, with observations in the area of \$10,000.  ATM4 shows a similar pattern as ATM1 & ATM2, with the exception of one day showing withdrawals over \$100,000.
+
+As explained above, each of the ATMs behaves differently; as such, each will be forecasted separately, using the following approach based on the previously-stated observations:
+
+  - ATM1 & ATM2 each exhibit similar patterns through the time window and will use the entire timeseries.
+  - It is possible that ATM3 was inactive and was only put in service in the last three days of the supplied window; these three days will be used to forecast future periods.
+  - It is reasonable to assume that the one-day spike observed at ATM4 was an abberation and will not be considered in forecasting.
+
+Separate timeseries objects are created to perform these forecasts:
+```{r a-split}
+# create ts objects for ATM1 & ATM2
+ATM1 <- ATM_ts[, "ATM1"]
+ATM2 <- ATM_ts[, "ATM2"]
+# get last 3 observations of ATM3 & convert to ts
+ATM3 <- ATM_ts[(nrow(ATM_ts) - 2):nrow(ATM_ts), "ATM3"]
+ATM3 <- ts(ATM3, start = 363)
+# create ts object for ATM3 & replace observations of 0 with NA
+ATM3 <- ATM_ts[, "ATM3"]
+ATM3[which(ATM3 == 0)] <- NA
+# create ts object for ATM4 & impute spike with median
+ATM4 <- ATM_ts[, "ATM4"]
+ATM4[which.max(ATM4)] <- median(ATM4, na.rm = TRUE)
+```
+
+
+## Seasonality, Autoregression, & Moving Averages
+Viewing the plots of ATM1, ATM2, & ATM4, it appears that there may be some form of seasonality in the withdrawals from the ATMs.  This can be further investigated by viewing the first two months of the data:
+```{r a-2mo-plot}
+autoplot(ts(ATM_ts[1:61, ])) +
+  labs(title = "Cash withdrawn from 4 ATMs",
+       subtitle = "May 2009 - June 2010",
+       x = "Day") +
+  scale_y_continuous("Cash withdrawn (hundreds)", labels = dollar) +
+  scale_color_discrete(NULL)
+```
+
+From this plot, it appears that there is a weekly seasonality present in the data -- each of the ATMs with data in this period show 8 distinct dips over the two-month period.  Daily timeseries (i.e. `ts` objects with `frequency = 1`) can not be decomposed to capture the seasonality identified above.  Per Rob J. Hyndman's [website](https://robjhyndman.com/hyndsight/dailydata/), the easiest way to capture weekly seasonal behavior is to set `frequency = 7`.  This is performed for ATMs 1, 2, & 4:
+```{r a-change-frequency}
+ATM1 <- ts(ATM1, frequency = 7)
+ATM2 <- ts(ATM2, frequency = 7)
+# impute NA value -- decomposition can not be performed on series with NA
+ATM2[which(is.na(ATM2))] <- median(ATM2, na.rm = TRUE)
+ATM4 <- ts(ATM4, frequency = 7)
+```
+
+### ATM 1
+The ATM1 timeseries is displayed below with its ACF & spectrum plots:
+```{r a-tsdisplay-1}
+ggtsdisplay(ATM1, points = FALSE, plot.type = "spectrum",
+            main = "Withdrawals from ATM1", xlab = "Week", ylab = "Cash (hundreds)")
+```
+
+The ACF & spectrum plots show a very clear weekly seasonality -- there are large spikes in the ACF lags 7, 14, and 21 as well as large spikes in the spectrum plot at frequencies 1, 2, and 3.  Both of these suggest a seasonal ARIMA model.  To account for the above-identified autocorrelation, the time series is differenced with a lag of 7:
+```{r a-diff-1}
+ggtsdisplay(diff(ATM1, 7), points = FALSE,
+            main = "Differenced (lag-7) withdrawals from ATM1",
+            xlab = "Week", ylab = "Cash (hundreds)")
+```
+
+The timeseries appears stationary, so no non-seasonal differencing is suggested by the data.  The significant spikes in the ACF and PACF at $k = 1$ suggest non-seasonal AR(1) and/or MA(1) components of the model.  The spikes in the ACF and PACF at $k = 7$ followed by decreasing spikes at $k = 14$ and $k = 21$ suggest seasonal AR(1) and/or seasonal MA(1) components.  This suggests fifteen possible models: ARIMA(p, 0, q)(P, 1, Q) for $p, q, P, Q \in [0, 1]$ excluding the case where $p, q, P, Q = 0$
+
+The models are calculated and their AIC values returned:
+```{r a-aic-1}
+# get optimal lambda for Box-cox transformation
+ATM1_lambda <- BoxCox.lambda(ATM1)
+# define function to create models & return AIC values for timeseries
+ATM_aic <- function(p, d, q, P, D, Q) {
+  # create model with Box-Cox and specified ARIMA parameters; extract AIC
+  AIC(Arima(ATM1, order = c(p, d, q), seasonal = c(P, D, Q), lambda = ATM1_lambda))
+}
+# create possible combinations of p, q, P, Q except all zero
+expand.grid(p = 0:1, q = 0:1, P = 0:1, Q = 0:1) %>%
+  filter(p > 0 | q > 0 | P > 0 | Q > 0) %>% 
+  # calc AIC for models
+  mutate(aic = pmap_dbl(list(p, 0, q, P, 1, Q), ATM_aic)) %>% 
+  # return best AIC
+  slice(which.min(aic))
+```
+
+The minimum AIC value is for non-seasonal AR(1) & MA(1) and seasonal AR(0) & MA(1) -- the model used is ARIMA(1,0,1)(0,1,1):
+```{r a-fit-1}
+ATM1_fit <- Arima(ATM1, order = c(1, 0, 1), seasonal = c(0, 1, 1), lambda = ATM1_lambda)
+```
+
+The residuals are investigated using a Ljung-Box test and diagnostic plotting:
+```{r a-resid-1}
+Box.test(resid(ATM1_fit), type = "L", fitdf = 3, lag = 7)
+ggtsdisplay(resid(ATM1_fit), points = FALSE, plot.type = "histogram",
+            main = "Residuals for ARIMA(1,0,1)(0,1,1) fit of ATM1 withdrawals",
+            xlab = "Week", ylab = "Residual")
+```
+
+The Ljung-Box test returns a p-value > 0.05, suggesting that the residuals may be white noise.  The residuals appear to be approximately normally distributed with a mean around zero. They do not appear to be autocorrelated, but there is an almost-significant spike at $k=6$.  This model is acceptable and will be used for forecasting.
+
+
+### ATM 2
+The same procedure is repeated for ATM2:
+```{r a-tsdisplay-2}
+ggtsdisplay(ATM2, points = FALSE,
+            main = "Withdrawals from ATM2", xlab = "Week", ylab = "Cash (hundreds)")
+```
+
+The same weekly seasonality is seen as for ATM1; it is also differenced with lag = 7:
+```{r a-diff-2}
+ggtsdisplay(diff(ATM2, 7), points = FALSE,
+            main = "Differenced (lag-7) withdrawals from ATM2",
+            xlab = "Week", ylab = "Cash (hundreds)")
+```
+
+As above, the large spike at $k=7$ suggests $D = 1$, while the stationary nature of the timeseries suggests $d = 0$.  The spikes in ACF & PACF in the non-differenced series at $k = 2$ & $k = 5$ suggest $p, q \in [0, 2, 5]$.  The lack of significant spikes in the ACF & PACF of the differenced series do not strongly suggest any need for seasonal AR or MA elements, but since the values at $k = 1$ are followed by decreasing values, $P, Q \in [0,1]$ are also investigated.  Each of the above mentioned models are investigated using the function created above:
+```{r a-aic-2}
+# get optimal lambda for Box-cox transformation
+ATM2_lambda <- BoxCox.lambda(ATM2)
+# repurpose above function for ATM2
+ATM_aic <- function(p, d, q, P, D, Q) {
+  # create model with Box-Cox and specified ARIMA parameters; extract AIC
+  AIC(Arima(ATM2, order = c(p, d, q), seasonal = c(P, D, Q), lambda = ATM2_lambda))
+}
+# create possible combinations of p, q, P, Q except all zero
+expand.grid(p = c(0, 2, 5), q = c(0, 2, 5), P = 0:1, Q = 0:1) %>%
+  filter(p > 0 | q > 0 | P > 0 | Q > 0) %>% 
+  # calc AIC for models
+  mutate(aic = pmap_dbl(list(p, 0, q, P, 1, Q), ATM_aic)) %>% 
+  # return best AIC
+  slice(which.min(aic))
+```
+
+The minimum AIC value is for non-seasonal AR(5) & MA(5) and seasonal AR(0) & MA(1) -- the model used is ARIMA(5,0,5)(0,1,1):
+```{r a-fit-2}
+ATM2_fit <- Arima(ATM2, order = c(5, 0, 5), seasonal = c(0, 1, 1), lambda = ATM2_lambda)
+```
+
+The residuals are investigated using a Ljung-Box test and diagnostic plotting:
+```{r a-resid-2}
+Box.test(resid(ATM2_fit), type = "L", fitdf = 11, lag = 14)
+ggtsdisplay(resid(ATM2_fit), points = FALSE, plot.type = "histogram",
+            main = "Residuals for ARIMA(5,0,5)(0,1,1) of ATM2 withdrawals",
+            xlab = "Week", ylab = "Residual")
+```
+
+The Ljung-Box test (using lag = 14 due to the high number of parameters in the fit) returns a p-value >> 0.05, suggesting that the residuals may be white noise.  The residuals appear to be approximately normally distributed with a mean around zero.  This model is acceptable and will be used for forecasting.
+
+
+### ATM 3
+As mentioned above, there are only three observations at ATM3, and only these observations are used for the forecast.  A simple mean forecast will be used for this ATM.
+
+
+### ATM 4
+Finally, the procedure used for ATM1 & ATM2 is repeated for ATM4.
+```{r a-tsdisplay-4}
+ggtsdisplay(ATM4, points = FALSE,
+            main = "Withdrawals from ATM4", xlab = "Week", ylab = "Cash (hundreds)")
+```
+
+The same weekly seasonality is seen as for ATM1 & ATM2; it is also differenced with lag = 7:
+```{r a-diff-4}
+ggtsdisplay(diff(ATM4, 7), points = FALSE,
+            main = "Differenced (lag-7) withdrawals from ATM4",
+            xlab = "Week", ylab = "Cash (hundreds)")
+```
+
+Again, the stationary time series with a large spike at $k=7$ suggests $D = 1$ and $d = 0$.  Similar spikes in the ACF & PACF of both the original and differenced timeseries as ATM2 suggest $p, q \in [0, 2, 5]$ and $P, Q \in [0,1]$ (though the evidence for seasonal AR and/or MA components are stronger in this case).  The code from above is reused to investigate the same possible models for ATM4:
+```{r a-aic-4}
+# get optimal lambda for Box-cox transformation
+ATM4_lambda <- BoxCox.lambda(ATM4)
+# repurpose above function for ATM4
+ATM_aic <- function(p, d, q, P, D, Q) {
+  # create model with Box-Cox and specified ARIMA parameters; extract AIC
+  AIC(Arima(ATM4, order = c(p, d, q), seasonal = c(P, D, Q), lambda = ATM4_lambda))
+}
+# create possible combinations of p, q, P, Q except all zero
+expand.grid(p = c(0, 2, 5), q = c(0, 2, 5), P = 0:1, Q = 0:1) %>%
+  filter(p > 0 | q > 0 | P > 0 | Q > 0) %>% 
+  # calc AIC for models
+  mutate(aic = pmap_dbl(list(p, 0, q, P, 1, Q), ATM_aic)) %>% 
+  # return best AIC
+  slice(which.min(aic))
+```
+
+The minimum AIC value is for non-seasonal AR(0) & MA(2) and seasonal AR(0) & MA(1) -- the model used is ARIMA(0,0,2)(0,1,1):
+```{r a-fit-4}
+ATM4_fit <- Arima(ATM4, order = c(0, 0, 2), seasonal = c(0, 1, 1), lambda = ATM4_lambda)
+```
+
+The residuals are investigated using a Ljung-Box test and diagnostic plotting:
+```{r a-resid-4}
+Box.test(resid(ATM4_fit), type = "L", fitdf = 3, lag = 7)
+ggtsdisplay(resid(ATM4_fit), points = FALSE, plot.type = "histogram",
+            main = "Residuals for ARIMA(0,0,2)(0,1,1) of ATM4 withdrawals",
+            xlab = "Week", ylab = "Residual")
+```
+
+The Ljung-Box test again returns a p-value >> 0.05, with residuals approximately normally distributed with a mean around zero.  This model is acceptable and will be used for forecasting.
+
+
+## Forecasting
+The four forecasts identified above are performed for May 2010 (31 days):
+```{r a-forecast}
+ATM1_forecast <- forecast(ATM1_fit, 31, level = 95)
+ATM2_forecast <- forecast(ATM2_fit, 31, level = 95)
+ATM3_forecast <- meanf(ATM3, 31, level = 95)
+ATM4_forecast <- forecast(ATM4_fit, 31, level = 95)
+```
+
+Each of the forecasts are plotted below:
+```{r a-plot-fcast}
+gridExtra::grid.arrange(
+  autoplot(ATM1_forecast) + 
+    labs(title = "ATM1: ARIMA(1,0,1)(0,1,1)", x = "Week", y = NULL) +
+    theme(legend.position = "none"),
+  autoplot(ATM2_forecast) + 
+    labs(title = "ATM2: ARIMA(5,0,5)(0,1,1)", x = "Week", y = NULL) +
+    theme(legend.position = "none"),
+  autoplot(ATM3_forecast) + 
+    labs(title = "ATM3: mean", x = "Day", y = NULL) +
+    theme(legend.position = "none"),
+  autoplot(ATM4_forecast) + 
+    labs(title = "ATM4: ARIMA(0,0,2)(0,1,1)", x = "Week", y = NULL) +
+    theme(legend.position = "none"),
+  top = grid::textGrob("Forecasted ATM withdrawals (in hundreds of dollars) for May 2010\n")
+)
+```
+
+As expected, these values show seasonality for ATMs 1, 2, and 4, with a single value forecast for ATM3.  The forecast values are gathered and output to a .csv, which is manually tranferred to Excel for submission:
+```{r a-output}
+data_frame(DATE = rep(max(ATM_df$DATE) + 1:31, 4),
+           ATM = rep(names(ATM_df)[-1], each = 31),
+           Cash = c(ATM1_forecast$mean, ATM2_forecast$mean,
+                    ATM3_forecast$mean, ATM4_forecast$mean)) %>% 
+  write_csv("project1_ATM.csv")
+```
+
+
+
+
+<!--
+# Part B: Forecasting Power
+
+```{r b-load}
+kWh <- read_excel("data/ResidentialCustomerForecastLoad-624.xlsx")
+kWh <- ts(kWh[, "KWH"], start = c(1998, 1), frequency = 12)
+```
+
+```{r b-plot}
+autoplot(kWh)
+```
+
+
+
+
+# Part C: Waterflow
+
+Your optional assignment is to time-base sequence the data and aggregate based on hour (example of what this looks like, follows).  Note for multiple recordings within an hour, take the mean.  Then to determine if the data is stationary and can it be forecast.  If so, provide a week forward forecast and present results as above in a Word readable file and the forecast in an Excel readable file.   
+
+-->
