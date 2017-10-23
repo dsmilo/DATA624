@@ -3,13 +3,13 @@ title: "DATA 624 Fall 2017: Project 1"
 author: "Dan Smilowitz"
 date: "October 24, 2017"
 output: 
-  html_document: 
-    highlight: pygments
-    theme: flatly
   word_document: 
     fig_height: 5
     fig_width: 7
     highlight: pygments
+  html_document: 
+    highlight: pygments
+    theme: flatly
 ---
 
 ```{r setup, include=FALSE}
@@ -40,7 +40,7 @@ ATM_ts <- ts(ATM_df %>% select(-DATE))
 ```
 
 
-## Data Inspection
+## Data Exploration
 The timeseries can be plotted with a separate line for each ATM:
 ```{r a-plot-all}
 library(forecast) # to plot ts objects
@@ -309,7 +309,7 @@ kWh <- read_excel("data/ResidentialCustomerForecastLoad-624.xlsx")
 kWh <- ts(kWh[, "KWH"], start = c(1998, 1), frequency = 12)
 ```
 
-## Data Inspection
+## Data Exploration
 The timeseries is plotted to inspect its features:
 ```{r b-plot}
 autoplot(kWh) +
@@ -318,7 +318,7 @@ autoplot(kWh) +
 ```
 
 There is a clear seasonality in this data -- it appears to be semi-annual, with a peak every six months, but it may be annual, as the peaks seem to alternate in their height.  This is consistent with problem 8.8 from *Forecasting: Principles and Practice*, completed in homework 1.  There is a very noticeable dip in value in July 2010.  It seems that the variance of the series may increase with its level; therefore a Box-cox transformation is also investigated.
-```{r b-trans-tsplot}
+```{r b-trans}
 # get Box-cox paramter
 kWh_lambda <- BoxCox.lambda(kWh)
 kWh_trans <- BoxCox(kWh, kWh_lambda)
@@ -374,7 +374,7 @@ ggtsdisplay(resid(kWh_fit), points = FALSE, plot.type = "histogram",
 
 
 ## Forecasting
-Using the ARIMA(1,0,0)(0,1,1) model, the next year (12 months) are forecast, and this forecast is plotted:
+Using the ARIMA(1,0,0)(0,1,1) model, the next year (12 months) is forecast, and this forecast is plotted:
 ```{r b-fcast}
 kWh_forecast <- forecast(kWh_fit, 12, level = 95)
 autoplot(kWh_forecast) + 
@@ -391,9 +391,102 @@ data_frame(`YYYY-MMM` = paste0(2014, "-", month.abb),
 ```
 
 
-<!--
+
 # Part C: Waterflow
 
-Your optional assignment is to time-base sequence the data and aggregate based on hour (example of what this looks like, follows).  Note for multiple recordings within an hour, take the mean.  Then to determine if the data is stationary and can it be forecast.  If so, provide a week forward forecast and present results as above in a Word readable file and the forecast in an Excel readable file.   
+## Data Munging & Exploration
+Prior to loading in the provided data for the two pipelines, the following changes are made in both files to make the data more easily readable by R:
 
--->
+  - Cell A1 is renamed from "Date Time" to "DateTime"
+  - The format of column A is changed to yyyy-mm-dd hh:mm
+  - The format of column A is changed to a number with 13 decimal places
+
+```{r c-read}
+water1 <- read_excel("data/Waterflow_Pipe1.xlsx")
+water2 <- read_excel("data/Waterflow_Pipe2.xlsx")
+```
+
+Both sets of readings have the same number of observations and start on the same date (10/23/2015), but end on different dates and have different timestamps -- pipeline 2 has readings at the end of every hour through 12/3/2105, while pipeline 1 has readings in the middle of hours, sometimes more than once per hour through 11/1/2015.  In order to use the two series together, the readings for pipeline 1 must be converted to hourly:
+```{r c-hourly}
+library(lubridate)
+water1 <- water1 %>% 
+  # separate date & hour components of readings
+  mutate(Date = date(DateTime),
+         # convert hour to hour-ending to match pipeline 2
+         Hour = hour(DateTime) + 1) %>% 
+  # get average reading for each date & hour
+  group_by(Date, Hour) %>% 
+  summarize(WaterFlow = mean(WaterFlow)) %>% 
+  # convert back to DateTime and drop separate date/hour columns
+  ungroup() %>%
+  mutate(DateTime = ymd_h(paste(Date, Hour))) %>% 
+  select(DateTime, WaterFlow)
+```
+
+Now it can be seen that there are only observations for pipeline 1 in 236 of the 1000 hours with observations for pipeline 2.  The two datasets are joined and a total wateflow is created, then converted to a timeseries:
+```{r c-join}
+# create df with both observations for each hour
+water_df <- full_join(water1, water2, by = "DateTime", suffix = c("_1", "_2")) %>% 
+  # convert missing pipeline 1 readings to zero
+  mutate(WaterFlow_1 = ifelse(is.na(WaterFlow_1), 0, WaterFlow_1)) %>% 
+  # get total waterflow by hour
+  mutate(WaterFlow = WaterFlow_1 + WaterFlow_2) %>% 
+  # drop individual numbers
+  select(DateTime, WaterFlow)
+# create hourly timeseries object
+water_ts <- ts(water_df$WaterFlow, frequency = 24)
+```
+
+The timeseries is plotted to inspect its features:
+```{r c-plot}
+autoplot(water_ts) +
+  labs(title = "Hourly water flow through two pipelines",
+       subtitle = "October 23, 2015 - December 3, 2015",
+       x = "Day", y = "Total waterflow")
+```
+
+This plot shows a decent amount of variability across the whole range, with an initial downward trend before day 10 followed by a roughly flat period through the end of the time window.
+
+
+## Fitting
+The variance seems roughly constant, but a Box-Cox transformation is performed nonetheless.  Due to the apparent non-stationarity, a lag-1 difference is taken:
+```{r c-trans}
+# get Box-cox paramter & transform
+water_lambda <- BoxCox.lambda(water_ts)
+water_trans <- BoxCox(water_ts, water_lambda)
+# plot differenced transformed series
+ggtsdisplay(diff(water_trans), points = FALSE,
+            main = "Differenced Box-Cox transformed water flow")
+```
+
+This timeseries appears stationary, but shows significant spikes in the ACF and PACF at $k = 1$, strongly suggesting non-seasonal AR(1) and MA(1) components.  There is no apparent seasonal behavior.  Thus, an ARIMA(1,1,1) model is used:
+```{r c-fit}
+water_fit <- Arima(water_ts, order = c(1, 1, 1), lambda = water_lambda)
+```
+
+The residuals of this fit are investigated:
+```{r c-resid}
+Box.test(resid(water_fit), type = "L")
+ggtsdisplay(resid(water_fit), points = FALSE, plot.type = "histogram",
+            main = "Residuals for ARIMA(1,1,1) of water flow")
+```
+
+The Ljung-Box test returns a value of almost 1; the residuals appear to be roughly normally distributed around 0 without significant autocorrelation.  The model is acceptable and will be used for forecasting.
+
+
+## Forecasting
+Using the ARIMA(1,1,1) model, one week (168 hours) is forecast, and the forecast plotted:
+```{r c-fcast}
+water_forecast <- forecast(water_fit, 168, level = 95)
+autoplot(water_forecast) + 
+    labs(title = "Forecasted water flow",
+         subtitle = "Using ARIMA(1,1,1) model", x = "Day", y = "Total flow") +
+    theme(legend.position = "none")
+```
+
+Due to the near-constant mean of the end of the data and lack of seasonality, a single value is forecast for the entire window.  The forecast values are output to a .csv file:
+```{r c-output}
+data_frame(DateTime = max(water_df$DateTime) + hours(1:168),
+           WaterFlow = water_forecast$mean) %>% 
+  write_csv("project1_water.csv")
+```
