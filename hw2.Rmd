@@ -1,0 +1,486 @@
+---
+title: 'DATA 624: Homework 2'
+author: "Dan Smilowitz"
+date: "December 5, 2017"
+output: 
+  html_document: 
+    highlight: pygments
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, warning = FALSE, message = FALSE,
+                      fig.align = "center")
+```
+
+# KJ 7.2
+Testing and training data is simulated as in the text:
+```{r 7-2_load}
+library(mlbench)
+set.seed(200)
+# training data set
+fried_train <- mlbench.friedman1(200, sd = 1)
+fried_train$x <- data.frame(fried_train$x)
+# test data set
+fried_test <- mlbench.friedman1(5000, sd = 1)
+fried_test$x <- data.frame(fried_test$x)
+```
+
+The relationship between the predictors `X1`-`X10` and the response `y` is investigated for the training data:
+```{r 7-2_plot}
+library(tidyverse)
+theme_set(theme_light())
+
+fried_train$x %>% 
+  # merge predictors & response into single df
+  mutate(y = fried_train$y) %>% 
+  # tidy data frame for easier manipulation & plotting
+  gather(var, x, -y) %>% 
+  # factor x variables & change factors so X10 is last (rather than after X1)
+  mutate(var = forcats::fct_relevel(factor(var), "X10", after = Inf)) %>% 
+  # plot
+  ggplot(aes(x, y)) +
+  geom_point(alpha = 0.25) +
+  facet_wrap(~ var, nrow = 2) +
+  theme(panel.grid.minor = element_blank())
+```
+
+The variables `X1`, `X2`, `x4`, & `X5` show positive correlations with the response `y`.  The remaining variables appear to show near-zero correlation to the response.
+
+
+## Model Training
+Three models are tested: the k nearest neighbors model suggested by the test, as well as MARS and SVM models
+
+
+### K Nearest Neighbors Model
+The k nearest neighbors model from the text is used as the first model, with predictors centered and scaled:
+```{r 7-2_knn-train}
+library(caret)
+set.seed(100) # for replicability
+fried_knn <- train(fried_train$x, fried_train$y, method = "knn",
+                  preProc = c("center", "scale"), tuneLength = 10)
+```
+
+The resampled RMSE of the model with various tuning parameters is shown below:
+```{r 7-2_knn-plot}
+fried_knn$results %>% 
+  ggplot(aes(x = k, y = RMSE)) +
+  geom_line() + geom_point(size = 1) +
+  labs(title = "KNN model parameter vs. RMSE")
+```
+
+The optimal RMSE of this model occurs at $k = 9$, which yields an RMSE of `r round(min(fried_knn$results), 3)`.
+
+
+### MARS Model
+A MARS model is also trained, using the same pre-processing as the KNN model above, for first- and second-degree products and pruning parameter from 1-20:
+```{r 7-2_train-mars}
+set.seed(100) # for replicability
+fried_mars <- train(fried_train$x, fried_train$y, method = "earth",
+                    preProc = c("center", "scale"),
+                    tuneGrid = expand.grid(degree = 1:2, nprune = 1:20))
+```
+
+The tuning profile of this model is shown below:
+```{r 7-2_plot-mars}
+fried_mars$results %>% 
+  ggplot(aes(x = nprune, y = RMSE, col = factor(degree))) +
+  geom_line() + geom_point(size = 1) +
+  labs(title = "MARS model parameters vs. RMSE", col = "degree")
+```
+
+The optimal RMSE of `r round(min(fried_mars$results), 3)` is achieved with a second-degree model with 14 parameters.  The importance of the predictors is shown below:
+
+`r varImp(fried_mars)`
+
+It can be seen above that the five informative predictors `X1`-`X5` are the only predictors selected by the model.
+
+
+### SVM Model
+An SVM model is fit using a radial kernel:
+```{r 7-2_train-svm}
+set.seed(100) # for replicability
+fried_svm <- train(fried_train$x, fried_train$y, method = "svmRadial",
+                   preProc = c("center", "scale"), tuneLength = 10)
+```
+
+The tuning profile of the model is shown below:
+```{r 7-2_plot-svm}
+fried_svm$results %>% 
+  ggplot(aes(x = C, y = RMSE)) +
+  geom_line() + geom_point(size = 1) +
+  scale_x_continuous(trans = "log2") +
+  labs(title = "Radial SVM model parameter vs. RMSE")
+```
+
+The optimal RMSE of `r round(min(fried_svm$results$RMSE), 3)`, which is achieved with a cost parameter $C = 4$ and a shape parameter $\sigma \approx 0.0579$.
+
+
+## Model Performance & Selection
+Each of the models is used to predict for the test set, and their performance is measured:
+```{r 7-2_pred}
+fried_knn_pred  <- predict(fried_knn, fried_test$x)
+fried_mars_pred <- predict(fried_mars, fried_test$x)
+fried_svm_pred  <- predict(fried_svm, fried_test$x)
+```
+
+```{r 7-2_perf}
+fried_knn_perf  <- defaultSummary(data.frame(obs = fried_test$y, pred = fried_knn_pred))
+fried_mars_perf <- defaultSummary(data.frame(obs = fried_test$y, pred = fried_mars_pred[, 1]))
+fried_svm_perf  <- defaultSummary(data.frame(obs = fried_test$y, pred = fried_svm_pred))
+
+library(pander)
+pander(data.frame(RMSE = c(fried_knn_perf["RMSE"], fried_mars_perf["RMSE"], fried_svm_perf["RMSE"]),
+       row.names = c("KNN", "MARS", "SVM")))
+```
+
+The most accurate model, based on both the resampled RMSE and performance against the test set, is the **MARS model**.
+
+
+
+# KJ 7.5
+```{r 7-5_load}
+data("ChemicalManufacturingProcess", package = "AppliedPredictiveModeling")
+# split into predictors & response
+chem_pred <- ChemicalManufacturingProcess %>% select(-Yield)
+chem_yield <- ChemicalManufacturingProcess %>% select(Yield)
+```
+
+As in problem 6.3, due to skewness of predictors, the data is preprocessed by performing Box-Cox transformations, centering, scaling, k-nearest neighbor imputation, with highly-correlated and near-zero variance predictors removed.  The data is also split into training and test sets:
+```{r 7-5_preprocess}
+# set up pre-processing transformation
+chem_preproc <- preProcess(chem_pred, method = c("knnImpute", "center", "scale",
+                                                 "nzv", "corr"))
+# apply pre-processing to data
+chem_pred_trans <- predict(chem_preproc, chem_pred)
+# get rows for training subsets
+set.seed(42)  # for replicability
+train_rows <- createDataPartition(chem_yield$Yield, p = 0.75, list = FALSE)
+# create training sets
+chem_pred_train <- chem_pred_trans[train_rows, ]
+chem_yield_train <- chem_yield[train_rows, ]
+# creae test sets
+chem_pred_test <- chem_pred_trans[-train_rows, ]
+chem_yield_test <- chem_yield[-train_rows, ]
+```
+
+
+## Model Training & Performance
+For consistency, the same training controls are used as in Problem 6.3:
+```{r 7-5_train-control}
+# use 15-fold cross-validation for training
+set.seed(100)  # for replicability
+chem_ctrl <- trainControl(method = "cv", number = 15)
+```
+
+For completion, each of the four model types illustrated in Chapter 7 are trained.
+
+
+### Neural Network Model
+A neural network model is fit to the data with a maximum of 10 hidden layers and possible decays of 0, 0.01, or 1:
+```{r 7-5_train-nn}
+set.seed(100)
+chem_nn <- train(chem_pred_train, chem_yield_train,
+                 method = "nnet", trControl = chem_ctrl,
+                 linout = TRUE, trace = FALSE, maxit = 500,
+                 tuneGrid = expand.grid(decay = c(0, 0.01, 1), size = 1:10))
+```
+
+The RMSE of the 30 models tested are presented below, followed by a calculation of the test set performance.
+```{r 7-5_plot-nn}
+chem_nn$results %>%
+  ggplot(aes(x = size, y = RMSE, col = factor(decay))) +
+  geom_line() + geom_point(size = 1) +
+  labs(title = "Neural network model parameters investigated", col = "decay")
+```
+
+The plot shows an initial low RMSE value for $\lambda = 0$, which continues to rise as the number of hidden layers increases.  Meanwhile $\lambda = 1$ remains fairly constant, while $\lambda = 0.01$ appears to have an optimal value at a size of 7.  If there were a desire to expand the model to include more hidden layers, these other values of $\lambda$ should be considered.
+
+The optimal resampled RMSE is `r round(min(chem_nn$results$RMSE), 3)`, which occurs with 2 hidden layers and no decay (i.e. $\lambda = 0$).  The model is also tested against the test set of yield values:
+```{r 7-5_test-nn}
+chem_nn_pred <- predict(chem_nn, chem_pred_test)
+chem_nn_perf <- defaultSummary(data.frame(obs = chem_yield_test, pred = nn_results[, 1]))
+```
+
+The RMSE of predictions against the test set of these values is `r round(nn_perf["RMSE"], 3)`.
+
+
+### MARS Model
+A multivariate adaptive regression splines model is also fit to the data.  Terms of degree 1-3 are investigated with pruning parameters ranging from 2-45 (one fewer than the number of predictors):
+```{r 7-5_train-mars}
+set.seed(100)
+chem_mars <- train(chem_pred_train, chem_yield_train,
+                   method = "earth", trControl = chem_ctrl,
+                   tuneGrid = expand.grid(degree = 1:3, nprune = 2:45))
+```
+
+The candidate models investigated are shown below:
+```{r 7-5_plot-mars}
+chem_mars$results %>%
+  ggplot(aes(x = nprune, y = RMSE, col = factor(degree))) +
+  geom_line() + geom_point(size = 1) +
+  labs(title = "MARS model parameters investigated", col = "degree")
+```
+
+The optimal resampled RMSE is `r round(min(chem_mars$results$RMSE), 3)`, which occurs with a third-degree equation with 8 terms.
+
+The two lowest RMSE values returned were for third-degree fits with 8 and 7 terms, respectively.  While these represent the most accurate models based on resampling, the first-degree model with 3 terms offers the third-best accuracy.  If model interpretability is important enough to sacrifice some accuracy, this model would make a reasonable alternative.
+
+Since the purpose of this investigation is to attain the highest-accuracy model, the optimal model identified above is used.  This model is used to predict the withheld values and compared for accuracy against the test set of outcomes:
+```{r 7-5_test-mars}
+chem_mars_pred <- predict(chem_mars, chem_pred_test)
+chem_mars_perf <- defaultSummary(data.frame(obs = chem_yield_test, pred = mars_results[, 1]))
+```
+
+The test performance of this model yields an RMSE of `r round(mars_perf["RMSE"], 3)` -- this represents an improvement over the performance of the neural network model.
+
+
+### Support Vector Machine Models
+Three support vector machine models are evaluated -- one for each kernel covered in the text:
+```{r 7-5_train-svm}
+# radial kernel with analytically calculated sigma
+set.seed(100)
+chem_svm_r <- train(chem_pred_train, chem_yield_train,
+                    method = "svmRadial", trControl = chem_ctrl)
+# polynomial kernel with analytically calculated sigma
+set.seed(100)
+chem_svm_p <- train(chem_pred_train, chem_yield_train,
+                    method = "svmPoly", trControl = chem_ctrl)
+# linear kernel with analytically calculated sigma
+set.seed(100)
+chem_svm_l <- train(chem_pred_train, chem_yield_train,
+                    method = "svmLinear", trControl = chem_ctrl,
+                    tuneGrid = data.frame(C = c(0.25, 0.5, 1)))
+```
+
+The candidate models for each of these kernels is investigated below:
+```{r 7-5_plot-svm}
+gridExtra::grid.arrange(top = "MARS model parameters investigated\n", 
+  chem_svm_r$results %>% 
+    ggplot(aes(x = C, y = RMSE)) + geom_line() + geom_point(size = 1) +
+    labs(subtitle = "Radial kernel"),
+  chem_svm_l$results %>% 
+    ggplot(aes(x = C, y = RMSE)) + geom_line() + geom_point(size = 1) +
+    labs(subtitle = "Linear kernel"),
+  chem_svm_p$results %>% 
+    ggplot(aes(x = C, y = RMSE, col = factor(degree), lty = factor(scale))) +
+    geom_line() + geom_point(size = 1) +
+    labs(subtitle = "Polynomial kernel", col = "degree", lty = "scale") +
+    ylim(0, 10) + theme(legend.position = "top", legend.box = "vertical",
+                        legend.margin = margin(0, 0, 0, 0),
+                        legend.box.margin = margin(0, 0, 0, 0)),
+  nrow = 1
+)
+```
+
+For the radial and linear kernels, it is clear that the radial and linear kernels have clear minima at $C = 1$ and $C = 0.25$, respectively.  For the polynomial fit, there was a great deal more variation -- this may be due to the presence of two additional tuning parameters.  The line for the third-degree polynomial with scale = 0.1 was so high (~50) that it was removed from the graph to keep the scales of the other values readable.  The minimum values for the three models occurred with the following parameters:
+```{r svm-rmse}
+library(pander)
+data.frame(C = c(chem_svm_r$results %>% slice(which.min(RMSE)) %>% pull(C),
+                 chem_svm_l$results %>% slice(which.min(RMSE)) %>% pull(C),
+                 chem_svm_p$results %>% slice(which.min(RMSE)) %>% pull(C)),
+           degree = c(NA, NA, chem_svm_p$results %>% slice(which.min(RMSE)) %>% pull(degree)),
+           scale = c(NA, NA, chem_svm_p$results %>% slice(which.min(RMSE)) %>% pull(scale)),
+           RMSE = c(min(chem_svm_r$results$RMSE),
+                    min(chem_svm_l$results$RMSE),
+                    min(chem_svm_p$results$RMSE)),
+           row.names = c("Radial", "Linear", "Polynomial")) %>% 
+  pander()
+```
+
+The polynomial SVM model has the best resampled RMSE, and it falls between the resampled RMSE performance of the neural network and MARS models.  Each of the SVM models is used to predict the test set, and their performance presented below:
+```{r 7-5_test-svm}
+# radial kernel
+chem_svm_r_pred <- predict(chem_svm_r, chem_pred_test)
+chem_svm_r_perf <- defaultSummary(data.frame(obs = chem_yield_test, pred = svm_r_results))
+# linear kernel
+chem_svm_l_pred <- predict(chem_svm_l, chem_pred_test)
+chem_svm_l_perf <- defaultSummary(data.frame(obs = chem_yield_test, pred = svm_l_results))
+# polynomial kernel
+chem_svm_p_pred <- predict(chem_svm_p, chem_pred_test)
+chem_svm_p_perf <- defaultSummary(data.frame(obs = chem_yield_test, pred = svm_p_results))
+
+pander(data.frame(RMSE = c(svm_r_perf["RMSE"], svm_l_perf["RMSE"], svm_p_perf["RMSE"]),
+                  row.names = c("Radial", "Linear", "Polynomial")))
+```
+
+Now the linear SVM model shows a better performance than the polynomial model.  Both of these represent better performance against the test set than the neural network or MARS models.
+
+
+### K Nearest Neighbors Model
+Finally, a k-nearest neighbor model is fit using 1-20 nearest neighbors:
+```{r 7-5_train-knn}
+chem_knn <- train(chem_pred_train, chem_yield_train,
+                  method = "knn", trControl = chem_ctrl,
+                  tuneGrid = data.frame(k = 1:20))
+```
+
+The relationship between parameter $k$ and RMSE are explored below:
+```{r 7-5_plot-knn}
+chem_knn$results %>% 
+  ggplot(aes(x = k, y = RMSE)) +
+  geom_line() + geom_point(size = 1) +
+  labs(title = "MARS model parameters investigated")
+```
+
+The minimum RMSE occurs at $k = 4$.  The corresponding RMSE is `r round(min(chem_knn$results$RMSE), 3)`.  The model is also used to predict the test set:
+```{r 7-5_test-knn}
+chem_knn_pred <- predict(chem_knn, chem_pred_test)
+chem_knn_perf <- defaultSummary(data.frame(obs = chem_yield_test, pred = knn_results))
+```
+
+This model yields a test performance of `r round(knn_perf["RMSE"], 3)`.
+
+
+### Model Selection
+A function is created and utilized to compare the resampled and test RMSEs across the six models discussed above:
+```{r 7-5_compare-nonlinear}
+RMSEs <- function (model_set) {
+  mdl_names <- character()
+  resampled <- numeric()
+  test <- numeric()
+  for (mdl in model_set) {
+    mdl_names <- c(mdl_names, mdl)
+    resampled <- c(resampled, min(get(paste0("chem_", mdl))$results$RMSE))
+    test <- c(test, get(paste0("chem_" mdl, "_perf"))["RMSE"])
+  }
+  pander(data.frame(`Resampled RMSE` = resampled, `Test RMSE` = test,
+                    row.names = mdl_names, check.names = FALSE), digits = 4)
+}
+
+RMSEs(c("nn", "mars", "svm_r", "svm_l", "svm_p", "knn"))
+```
+
+Unfortunately, there is no clear "best" model.  In the pursuit of accuracy, test set RMSE is the preferred metric, but the model that did the best by that measure (linear SVM) did the worst with resampling RMSE, so it is not used.  The next-best model for test prediction is the **polynomial SVM**; it also has the third-best resampled RMSE.  This model is used going forwards.
+
+
+## Predictor Importance & Relationships
+The importance of each predictor in the polynomial SVM model is calculated, and the top 10 predictors are plotted below:
+```{r 7-5_svm-imp}
+# get predictor importance
+svm_imp <- varImp(chem_svm_p)
+# plot importance
+ggplot(svm_imp, top = 10) + ggtitle("Importance of top 10 predictors for polynomial SVM model")
+```
+
+It is clear that *ManufacturingProcess32* is, by a strong margin, the most important predictor in this model.  As with the linear model fit in problem 6.3, two of the 10 top predictors are biological.  This portion nearly matches the share of total predictors available that are biological (21%).  For further investigation, variable importance is compared with the linear PLS model fit in problem 6.3:
+```{r 7-5_linear}
+# retrain linear model used
+chem_pls <- train(x = chem_pred_train, y = chem_yield_train,
+                  method = "pls", tuneLength = 20, trControl = chem_ctrl)
+# get predictor importance for linear model
+pls_imp <- varImp(chem_pls)
+# plot importance for both models next to each other
+gridExtra::grid.arrange(top = "Importance of top 10 predictors for two models\n",
+  ggplot(svm_imp, top = 10) +
+    labs(subtitle = "Polynomial SVM [non-linear]", x = NULL, y = NULL),
+  ggplot(pls_imp, top = 10) +
+    labs(subtitle = "PLS [linear]", x = NULL, y = NULL),
+  nrow = 1)
+```
+
+For both models, *ManufacturingProcess32* is the most important predictor.  While the order of the remaining predictors is different between the models, a total of 9 of the top 10 predictors are shared between the models -- the only differences are *ManufacturingProcess02* (#7) in the non-linear model vs. *ManufacturingProcess12* (#10) for the linear model.
+
+For the polynomial SVM model, the relationship of the top 6 predictors is shown below:
+```{r kj_6-3_f}
+# get top 6 predictors
+svm_top <- rownames(svm_imp$importance)[order(svm_imp$importance$Overall, decreasing = TRUE)][1:6]
+# separate top predictors & yield into data frame
+svm_rel <- as.data.frame(cbind(chem_pred_trans, chem_yield)[, c(svm_top, "Yield")])
+# plot to investigate relationships
+svm_rel %>% 
+  # convert to tidy format
+  gather(Predictor, Value, -Yield) %>% 
+  # plot
+  ggplot(aes(x = Value, y = Yield)) +
+  geom_point(alpha = 0.25) +
+  stat_smooth(se = FALSE, method = "glm") +
+  facet_wrap(~ Predictor, nrow = 2, scales = "free") +
+  labs(title = "Relationship of top SVM predictors and yield for chemical process")
+```
+
+Both of the biological predictors, as well as the most important variable *ManufacturingProcess32*, have positive correlations with yield.  The remaining manufacturing processes have negative correlations with yield.
+
+
+<!--
+## KJ 8.1
+Recreate the simulated data from Exercise 7.2:
+```{r eval=FALSE}
+library(mlbench)
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+```
+
+### Part a
+Fit a random forest model to all of the predictors, then estimate the variable importance scores:
+```{r eval=FALSE}
+library(randomForest)
+library(caret)
+model1 <- randomForest(y ~ ., data = simulated, importance = TRUE, ntree = 1000)
+rfImp1 <- varImp(model1, scale = FALSE)
+```
+Did the random forest model significantly use the uninformative predic-
+tors ( V6 - V10 )?
+
+### Part b
+Now add an additional predictor that is highly correlated with one of the informative predictors. For example:
+```{r eval=FALSE}
+simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
+cor(simulated$duplicate1, simulated$V1)
+```
+Fit another random forest model to these data. Did the importance score for V1 change? What happens when you add another predictor that is also highly correlated with V1 ?
+
+### Part c
+Use the cforest function in the party package to fit a random forest model using conditional inference trees. The party package function varimp can calculate predictor importance. The conditional argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
+
+### Part d
+Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+
+## KJ 8.2
+Use a simulation to show tree bias with different granularities.
+
+
+## KJ 8.3
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradient. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
+
+### Part a
+Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
+
+### Part b
+Which model do you think would be more predictive of other samples?
+
+### Part c
+How would increasing interaction depth affect the slope of predictor importance for either model in Fig.8.24?
+
+
+## KJ 8.7
+Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
+  - (a) Which tree-based regression model gives the optimal resampling and test set performance?
+  - (b) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
+  - (c) Plot the optimal single tree with the distribution of yield in the terminal nodes. Does this view of the data provide additional knowledge about the biological or process predictors and their relationship with yield?
+
+
+## KJ 8.4
+Use a single predictor in the solubility data, such as the molecular weight or the number of carbon atoms and fit several models:
+  - (a) A simple regression tree
+  - (b) A random forest model
+  - (c) Different Cubist models with a single rule or multiple committees (each with and without using neighbor adjustments)
+  
+Plot the predictor data versus the solubility results for the test set. Overlay the model predictions for the test set. How do the model differ? Does changing the tuning parameter(s) significantly affect the model fit?
+
+
+## KJ 8.5
+Fit different tree- and rule-based models for the Tecator data discussed in Exercise 6.1. How do they compare to linear models? Do the between-predictor correlations seem to affect your models? If so, how would you transform or re-encode the predictor data to mitigate this issue?
+
+
+## KJ 8.6
+Return to the permeability problem described in Exercises 6.2 and 7.4.  Train several tree-based models and evaluate the resampling and test set performance:
+  - (a) Which tree-based model gives the optimal resampling and test set performance?
+  - (b) Do any of these models outperform the covariance or non-covariance based regression models you have previously developed for these data? What criteria did you use to compare models' performance?
+  - (c) Of all the models you have developed thus far, which, if any, would you recommend to replace the permeability laboratory experiment?
+
+-->
