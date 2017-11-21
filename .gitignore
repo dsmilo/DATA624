@@ -2,3 +2,4 @@
 *.html
 DATA624.Rproj
 .Rproj.user
+.RData
