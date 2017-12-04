@@ -1033,3 +1033,72 @@ cube_rel %>%
 
 Four of the six predictors have positive correlations with yield, incuding the most important predictor *ManufacturingProcess32* and the sole biological variable *BiologicalMaterial06*.
 
+
+
+# Market Basket Analysis
+Use R to mine the data for association rules.  You should report support, confidence and lift and your top 10 rules by lift.
+
+```{r rec-load}
+library(arules)
+grocery <- read.transactions("data/GroceryDataSet.csv", sep = ",", format = "basket")
+summary(grocery)
+```
+
+The data contain information on 9835 transactions across 169 possible items.
+
+
+## Data Investigation
+The top items by frequency are investigated:
+```{r rec-plot-top}
+itemFrequencyPlot(grocery, topN = 20, main = "\nTop 20 items purchased\n")
+```
+
+It can be seen that *whole milk* is the single most common purchased item, followed by *other vegetables*, *rolls/buns*, *soda*, and *yogurt*, after which frequencies slowly decline.  The probability of these top five items occurring together is presented in the table below:
+```{r rec-top5-tbl}
+crossTable(grocery, measure = "support", sort = TRUE)[1:5, 1:5] %>%
+  pander(split.table = Inf, round = 3)
+```
+
+The table shows that the most commonly purchased item with *whole milk* is *other vegetables*, the second most commonly purchased item.  In fact, for each item in the top 5, the most commonly purchased other item is *whole milk*.
+
+## Association Rules
+The `arules` package is used to mine the data for association rules.  In order to do so, two parameters are set:
+
+  - The minimum support (i.e. the percent of transactions containing a given antecedent item & consequent item) required when identifying frequent item sets.  The default setting of 0.1 will not yield many sets -- this is verified by running the command `length(which(crossTable(grocery, measure = "support") > 0.1))`.  This value is set to `support = 0.001`.
+  - The minimum confidence (i.e. the percentage of transactions with a given antecendet item that also contain a given consequent item).  Given the large number of items, this value is lowered from the default value of 0.8 to a value of `confidence = 0.25`.
+  - The minimum length of rules.  To avoid single-item rules, this is set to `minlen = 2`
+
+The rules are mined, using the `verbose = FALSE` argument to suppress output during mining:
+```{r rec-get-rules}
+grocery_rules <- apriori(grocery, control = list(verbose = FALSE),
+                         parameter = list(support = 0.001, confidence = 0.25, minlen = 2))
+```
+
+A summary of the rules reveals that 17,392 rules were generated, ranging in length from 2 to 6, with a median length of 4:
+```{r rec-rule-summary}
+summary(grocery_rules)
+```
+
+Lift provides the ratio of confidence to the unconditional probability of consequents, indicating how informative the antecedents (LHS) of a rule are in predicting the consequent (RHS).  The top rules ordered by lift are presented below:
+```{r rec-top10}
+grocery_rules_top <- sort(grocery_rules, by = "lift", decreasing = TRUE)[1:10]
+inspect(grocery_rules_top)
+```
+
+The top rule, with a lift of 35.72, is for a purchase of *liquor* after purchasing *bottled beer* & *red/blush wine*.  This pattern appeared 19 times in teh sample data.  A different order of this combination, with *red/blush wine* as the right hand side; this rule has a lift of 21.49.
+
+The support, confidence, and lift of all identified rules with a lift greater than 5 are presented below:
+```{r rec-plot-all}
+library(arulesViz)
+library(viridisLite)
+plot(subset(grocery_rules, lift > 5), control = list(col = viridis(100)))
+```
+
+It can be seen that most of these 1408 rules, including those identified above as top rules, show support less than 0.002 and confidence less than 0.6; this indicates that the modification of the default parameters in the call to `apriori` helped uncover far more informative rules.
+
+Finally, the parallel coordinates of the top ten rules is show below, with the color indicating the lift of each rule and the width indicating the count:
+```{r rec-plot-top10}
+plot(grocery_rules_top, method = "paracoord", control = list(col = viridis(10), reorder = TRUE))
+```
+
+As discussed above, the two rules with *beer* in the second position exchanging *liquor* or *red/blush wine* as the first position or RHS have the highest frequencies and lifts.
