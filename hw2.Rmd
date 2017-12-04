@@ -3,6 +3,10 @@ title: "DATA 624 Fall 2017: Homework 2"
 author: "Dan Smilowitz"
 date: "December 12, 2017"
 output: 
+  word_document: 
+    fig_height: 5
+    fig_width: 7
+    highlight: pygments
   html_document: 
     highlight: pygments
     theme: flatly
@@ -228,7 +232,7 @@ chem_mars$results %>%
 
 The optimal resampled RMSE is `r round(min(chem_mars$results$RMSE), 3)`, which occurs with a first-degree equation with 2 terms.
 
-The four lowest RMSE values returned were for first-degree fits with 1-4 terms.  The four next-lowest RMSEs were returned by the second- and third-degree models with 4-5 terms.  If an expaned model is important enough to sacrifice some accuracy, these models coule be selected.
+The four lowest RMSE values returned were for first-degree fits with 1-4 terms.  The four next-lowest RMSEs were returned by the second- and third-degree models with 4-5 terms.  If an expand model is important enough to sacrifice some accuracy, these models could be selected.
 
 Since the purpose of this investigation is to attain the highest-accuracy model, the optimal model identified above is used.  This model is used to predict the withheld values and compared for accuracy against the test set of outcomes:
 ```{r 7-5_test-mars}
@@ -367,7 +371,7 @@ mars_imp <- varImp(chem_mars)
 ggplot(mars_imp, top = 10) + ggtitle("Importance of top 10 predictors for MARS model")
 ```
 
-It is clear that there are only two predictos of any importance in this model -- *ManufacturingProcess32* and *ManufacturingProcess09*.  Of the two, *ManufacturingProcess32* is roughly twice as important as *ManufacturingProcess09*.  Obviously, 100% of these predictors are manufacturing-related.  This is contrary to the finding from the linear model, which found 20% of the top 10 predictors to be biological.  For further investigation, variable importance is compared with the linear PLS model fit in problem 6.3:
+It is clear that there are only two predictors of any importance in this model -- *ManufacturingProcess32* and *ManufacturingProcess09*.  Of the two, *ManufacturingProcess32* is roughly twice as important as *ManufacturingProcess09*.  Obviously, 100% of these predictors are manufacturing-related.  This is contrary to the finding from the linear model, which found 20% of the top 10 predictors to be biological.  For further investigation, variable importance is compared with the linear PLS model fit in problem 6.3:
 ```{r 7-5_linear}
 # retrain linear model used
 set.seed(100)
@@ -384,7 +388,7 @@ gridExtra::grid.arrange(top = "Importance of top 10 predictors for two models\n"
   nrow = 1)
 ```
 
-For both models, *ManufacturingProcess32* is the most important predictor.  Both models also contain *ManufacturingProcess09* -- it is the second-most important variable inthe MARS model and the fourth-most important in the PLS model.
+For both models, *ManufacturingProcess32* is the most important predictor.  Both models also contain *ManufacturingProcess09* -- it is the second-most important variable in the MARS model and the fourth-most important in the PLS model.
 
 For the MARS model, the relationship of the top 2 predictors is shown below:
 ```{r kj_6-3_f}
@@ -531,7 +535,7 @@ pander(data.frame(Original = c(fried_imp_cube_orig[, 1], NA),
                   row.names = paste0("X", 1:11)))
 ```
 
-Similar behavior is seen as in te CART model, with the exception of the importance of `X6`.
+Similar behavior is seen as in the CART model, with the exception of the importance of `X6`.
 
 
 ### Boosted Trees
@@ -770,7 +774,7 @@ sol_carbon_test %>%
           subtitle = "Test set observations & model predictions")
 ```
 
-The models appear to match one another reasonably well for $NumCarbon \lesssim 3.5$; however above this point, the model differences become more apparent -- the Cubist model appears least influenced by the the low points just below 4 on the x axis.  Above $NumCarbon = 4$, both the Cubist and tree models show fairly steady behavior, while the random forest model shows a great deal of variation from the data, suggesting that it may be more biased.
+The models appear to match one another reasonably well for $NumCarbon \lesssim 3.5$; however above this point, the model differences become more apparent -- the Cubist model appears least influenced by the low points just below 4 on the x axis.  Above $NumCarbon = 4$, both the Cubist and tree models show fairly steady behavior, while the random forest model shows a great deal of variation from the data, suggesting that it may be more biased.
 
 To get a more direct comparison of all models' predictions vs. the actual test observations, an additional plot is created:
 ```{r 8-4_plot-compare}
@@ -908,7 +912,7 @@ The test performance of this model is `r round(chem_rf_perf["RMSE"], 3)`.  This 
 
 
 ### Boosted Tree Model
-A gradient-boosted model is fitted, training across three shrinkage values, five interaction depths, and ten number of tree values, keeping the minumum number of observations per node set to the default of 10:
+A gradient-boosted model is fitted, training across three shrinkage values, five interaction depths, and ten number of tree values, keeping the minimum number of observations per node set to the default of 10:
 ```{r 8-7_boost-train}
 set.seed(100)
 chem_boost <- train(chem_pred_train, chem_yield_train,
@@ -966,7 +970,7 @@ chem_cube_pred <- predict(chem_cube, chem_pred_test)
 chem_cube_perf <- defaultSummary(data.frame(obs = chem_yield_test, pred = chem_cube_pred))
 ```
 
-The test performance of this model is `r round(chem_cube_pred["RMSE"], 3)`.
+The test performance of this model is `r round(chem_cube_perf["RMSE"], 3)`.
 
 
 ### Model Selection
@@ -1031,7 +1035,7 @@ cube_rel %>%
   labs(title = "Relationship of top Cubist predictors and yield for chemical process")
 ```
 
-Four of the six predictors have positive correlations with yield, incuding the most important predictor *ManufacturingProcess32* and the sole biological variable *BiologicalMaterial06*.
+Four of the six predictors have positive correlations with yield, including the most important predictor *ManufacturingProcess32* and the sole biological variable *BiologicalMaterial06*.
 
 
 
@@ -1065,7 +1069,7 @@ The table shows that the most commonly purchased item with *whole milk* is *othe
 The `arules` package is used to mine the data for association rules.  In order to do so, two parameters are set:
 
   - The minimum support (i.e. the percent of transactions containing a given antecedent item & consequent item) required when identifying frequent item sets.  The default setting of 0.1 will not yield many sets -- this is verified by running the command `length(which(crossTable(grocery, measure = "support") > 0.1))`.  This value is set to `support = 0.001`.
-  - The minimum confidence (i.e. the percentage of transactions with a given antecendet item that also contain a given consequent item).  Given the large number of items, this value is lowered from the default value of 0.8 to a value of `confidence = 0.25`.
+  - The minimum confidence (i.e. the percentage of transactions with a given antecedent item that also contain a given consequent item).  Given the large number of items, this value is lowered from the default value of 0.8 to a value of `confidence = 0.25`.
   - The minimum length of rules.  To avoid single-item rules, this is set to `minlen = 2`
 
 The rules are mined, using the `verbose = FALSE` argument to suppress output during mining:
@@ -1085,7 +1089,7 @@ grocery_rules_top <- sort(grocery_rules, by = "lift", decreasing = TRUE)[1:10]
 inspect(grocery_rules_top)
 ```
 
-The top rule, with a lift of 35.72, is for a purchase of *liquor* after purchasing *bottled beer* & *red/blush wine*.  This pattern appeared 19 times in teh sample data.  A different order of this combination, with *red/blush wine* as the right hand side; this rule has a lift of 21.49.
+The top rule, with a lift of 35.72, is for a purchase of *liquor* after purchasing *bottled beer* & *red/blush wine*.  This pattern appeared 19 times in the sample data.  A different order of this combination, with *red/blush wine* as the right hand side; this rule has a lift of 21.49.
 
 The support, confidence, and lift of all identified rules with a lift greater than 5 are presented below:
 ```{r rec-plot-all}
